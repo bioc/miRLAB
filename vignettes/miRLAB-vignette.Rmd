@@ -1,0 +1,107 @@
+---
+title: "miRLAB"
+author: "Thuc Duy Le"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{miRLAB}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+# Introduction
+
+
+microRNAs (miRNAs) are important gene regulators at post-transcriptional level, and they control a wide range of biological processes and are involved in several types of cancers. Therefore, exploring miRNA functions is important for diagnostics and therapeuticsinferring and inferring miRNA-mRNA regulatory relationships is a crucial problem. 
+
+The signiffcant roles of miRNAs have given rise to the development of a fast growing number of methods in recent years for inferring miRNA-mRNA regulatory relationships. Great efforts have been made in discovering miRNA targets based on sequence data of the miRNAs and the mRNAs. However, the predicted results by the methods are inconsistent, and contain a high rate of false discoveries. Recently, it has been proposed to incorporate gene expression data into the study of miRNA-mRNA regulatory relationships. These methods have proved to be effective in reducing the false discoveries. However, there is a lack of computational tools for speeding miRNA research, given the time for processing data, comparing different computational methods, and validating the predictions is very time consuming.  For example, a typical procedure for a researcher to test a new miRNA target prediction method is:
+
+i) collecting matched miRNA and mRNA expression profiles in a specific condition, e.g. a cancer dataset from TCGA,  
+
+ii) applying the new computational method to the selected dataset, 
+
+iii) validating the predictions against knowledge from literature and third-party databases, and 
+
+iv) comparing the performance of the method with some existing  methods. 
+
+This procedure is time consuming given the time elapsed when collecting and processing data, repeating the work from existing methods, searching for knowledge from literature and third-party databases to validate the results, and comparing the results from different methods. The time consuming procedure prevents researchers from quickly testing new computational models, analysing new datasets, and selecting suitable methods for assisting with the experiment design. 
+
+Here, we present an R package, miRLAB, for automating the procedure of inferring and validating miRNA-mRNA regulatory relationships. The package provides a complete set of pipelines for testing new methods and analysing new datasets. miRLAB includes a set of built-in matched miRNA and mRNA expression datasets, a pipeline to get datasets directly from The Cancer Genome Atlas (TCGA),  the benchmark computational methods for inferring miRNA-mRNA regulatory relationships, the functions for validating the predictions using miRNA experimentally validated target data and miRNA transfection data, and tools to compare the results from different computational methods.
+
+#Computational methods for miRNA target predictions
+In miRLAB [1], we provide a number of commonly used computational methods for miRNA target prediction. We have re-implemented the methods so that they are easy to use with a simple function call (just one line of code for calling most of the methods). Users only need to provide the dataset in csv format (see the Datasets and ground truth section for more details), and specify the column index of the cause (miRNAs) and the effect (mRNAs). Most of these function calls have the same syntax, and therefore it is convenient for users. In the following we show how to use Pearson correlation (Pearson function), mutual information (MI function), causal inference (IDA function), and regression (Lasso function) to infer the relationships between miRNAs and mRNAs.  Each function will return a matrix that contains the correlation coefficients/ scores that represent the effects that the miRNAs have on the mRNAs. Columns are miRNAs and rows are mRNAs. Please refer to [1] or the manual of the package for the full list of all functions (methods for inferring miRNA-mRNA relationships). 
+
+```{r, eval=FALSE}
+
+library(miRLAB)
+
+dataset=system.file("extdata", "EMT35.csv", package="miRLAB")
+cause=1:35 #column 1:35 are miRNAs
+effect=36:1189 #column 36:1189 are mRNAs
+
+#predict miRNA targets using Pearson correlation
+pearson=Pearson(dataset, cause, effect)
+
+#predict miRNA targets using Mutual Information
+mi=MI(dataset, cause, effect)
+
+#predict miRNA targets using causal inference
+ida=IDA(dataset, cause, effect, "stable", 0.01)
+
+#predict miRNA targets using linear regression
+lasso=Lasso(dataset, cause, effect)
+
+```
+#Validating the computational predictions
+
+The prediction results can then be validated against the experimentally confirmed databases. We may want to extract the top predicted targets of each miRNA for validation.
+
+```{r, eval=TRUE}
+library(miRLAB)
+#validate the results of the top100 targets of each miRNA predicted 
+#by the four methods
+dataset=system.file("extdata", "ToyEMT.csv", package="miRLAB")
+pearson=Pearson(dataset, 1:3, 4:18)
+miR200aTop10=bRank(pearson, 3, 10, TRUE)
+groundtruth=system.file("extdata", "Toygroundtruth.csv", package="miRLAB")
+miR200aTop10Confirmed = Validation(miR200aTop10, groundtruth)
+ ```
+
+Alternatively, we can extract the top predicted interactions (may include multiple miRNAs) and validate these
+predictions against the experimentally confirmed databases.
+
+```{r, eval=TRUE}
+library(miRLAB)
+#validate the results of the top100 targets of each miRNA predicted 
+#by the four methods
+dataset=system.file("extdata", "ToyEMT.csv", package="miRLAB")
+EMTresults=Pearson(dataset, 1:3, 4:18)
+top10=Extopk(EMTresults, 10)
+groundtruth=system.file("extdata", "Toygroundtruth.csv", package="miRLAB")
+top10Confirmed = Validation(top10, groundtruth)
+ ```
+#Datasets and ground truth
+
+The input dataset should be in csv format and contain the expression data of both miRNAs and mRNAs. The first row of the dataset (the header) must contain the gene symbols of miRNAs and mRNAs. The following example shows the first few rows and columns of an valid input dataset.
+```{r, eval=TRUE}
+library(miRLAB)
+dataset=system.file("extdata", "ToyEMT.csv", package="miRLAB")
+dataset=Read(dataset)
+dataset[1:5,1:7]
+```
+
+To validate the results from the computational methods, users need to provide the ground truth in csv format. The ground truth file should contain two columns, in which the first shows the miRNA symbols and the second shows the mRNA symbols. The right format of the ground truth file is shown in the following.
+```{r, eval=TRUE}
+library(miRLAB)
+groundtruth=system.file("extdata", "Toygroundtruth.csv", package="miRLAB")
+groundtruth=Read(groundtruth)
+groundtruth[1:5,]
+```
+
+# Conclusions
+
+To date, several computational methods have been proposed to infer miRNA-mRNA regulatory relationships using expression data with or without miRNA target information. Each of the methods has its own merits and no single method always performs the best in all datasets. There is still a lack of tools for evaluating computational methods and exploring miRNA functions in a new dataset, validating miRNA prediction results, and selecting suitable methods for assisting experiment design. 
+
+To address the problem, we propose the idea of creating a comprehensive dry lab environment on a single computer. Following the idea, we have developed an R package called miRLAB, to provide such a computational lab for exploring and experimenting miRNA-mRNA regulatory relationships. miRLAB includes three components: Datasets and pre-processing, Computational methods, and Validation and post-processing. Please refer to the reference paper for  four different scenarios to show how to use the package. Details of all functions are listed in the user manual and users may design their own workflow using those easy-to-use functions. 
+
+# References
+Thuc Duy Le, Junpeng Zhang, Lin Liu, and Jiuyong Li, miRLAB: An R based dry lab for exploring miRNA-mRNA relationships, submitted.

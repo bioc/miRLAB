@@ -1,0 +1,19 @@
+Package: miRLAB
+Type: Package
+Title: Dry lab for exploring miRNA-mRNA relationships
+Version: 0.99.2
+Date: 2015-04-23
+Author: Thuc Duy Le, Junpeng Zhang
+Maintainer: Thuc Duy Le <Thuc.Le@unisa.edu.au>
+Imports: RCurl, httr, stringr, Hmisc, energy, entropy, Roleswitch,
+        gplots, glmnet, impute, limma, pcalg
+Description: Provide tools exploring miRNA-mRNA relationships,
+        including popular miRNA target prediction methods, ensemble
+        methods that integrate individual methods, functions to get
+        data from online resources, functions to validate the results,
+        and functions to conduct enrichment analyses.
+License: GPL (>=2)
+Suggests: knitr, RUnit, BiocGenerics
+VignetteBuilder: knitr
+biocViews: miRNA, GeneExpression, NetworkInference, Network
+NeedsCompilation: no
