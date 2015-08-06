@@ -20,12 +20,9 @@ Given the predicted target of a miRNA, the function returns a list of targets th
 based on the curated transfection data. Users need to download the file logFC.imputed.rda from nugget.unisa.edu.au/Thuc/miRLAB/ and place it in the working directory (this file is obtained from the TargetScoreData package)
 }
 \examples{
-\dontrun{
-dataset=system.file("extdata", "EMT35.csv", package="miRLAB")
-ps=Pearson(dataset, cause=1:35, effect=36:1189)
-miR200aTop100=bRank(ps, 11, 100, TRUE)
-miR200aTop100Confirmed = ValidationT(miR200aTop100, 1.0)
-}
+print("ps=Pearson(dataset, cause=1:35, effect=36:1189)")
+print("miR200aTop100=bRank(ps, 11, 100, TRUE)")
+print("miR200aTop100Confirmed = ValidationT(miR200aTop100, 1.0)")
 }
 \references{
 1. Le, T.D., Zhang, J., Liu, L., and Li, J. (2015) Ensemble Methods for miRNA Target Prediction from Expression Data, under review.

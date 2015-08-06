@@ -23,14 +23,10 @@ a list of matrices that contains the confirmed interactions by both provided gro
 }
 \description{
 Given the predicted target of all miRNA, the function returns a list of targets of each miRNA that are  confirmed
-based on the experimentally validated interactions or curated transfection data.
+based on the experimentally validated interactions or curated transfection data. Users need to download the file logFC.imputed.rda from nugget.unisa.edu.au/Thuc/miRLAB/ and place it in the working directory (this file is obtained from the TargetScoreData package)
 }
 \examples{
-\dontrun{
-dataset=system.file("extdata", "ToyEMT35.csv", package="miRLAB")
-ps=Pearson(dataset, cause=1:3, effect=4:18)
-groundtruth=system.file("extdata", "groundtruth.csv", package="miRLAB")
-results=ValidateAll(ps, 10, groundtruth, LFC=0.5, downreg=TRUE)
-}
+print("ps=Pearson(dataset, cause=1:3, effect=4:18)")
+print("results=ValidateAll(ps, 10, groundtruth, LFC=0.5, downreg=TRUE)")
 }
 

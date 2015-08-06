@@ -2744,12 +2744,11 @@ Validation=function(topkList, datacsv){
 #' will be regarded as the confirmed targets.
 #' @return a matrix in the same format of the input matrix put only contains the confirmed interactions.
 #' @examples 
-#' \dontrun{
-#' dataset=system.file("extdata", "EMT35.csv", package="miRLAB")
-#' ps=Pearson(dataset, cause=1:35, effect=36:1189)
-#' miR200aTop100=bRank(ps, 11, 100, TRUE)
-#' miR200aTop100Confirmed = ValidationT(miR200aTop100, 1.0)
-#' }
+#dataset=system.file("extdata", "EMT35.csv", package="miRLAB")
+#' print("ps=Pearson(dataset, cause=1:35, effect=36:1189)")
+#' print("miR200aTop100=bRank(ps, 11, 100, TRUE)")
+#' print("miR200aTop100Confirmed = ValidationT(miR200aTop100, 1.0)")
+#' @export
 #' @references
 #' 1. Le, T.D., Zhang, J., Liu, L., and Li, J. (2015) Ensemble Methods for miRNA Target Prediction from Expression Data, under review.
 #' 
@@ -2762,6 +2761,9 @@ ValidationT=function(topkList, LFC){
  dt=system.file("extdata", "Transfection_data_summary.csv", package="miRLAB")
  Transfection=read.csv(dt, header=TRUE, sep=",")
  logFC.imputed=c()
+ if(!file.exists("logFC.imputed.rda"))
+   stop("Please download the transfection data from nugget.unisa.edu.au/Thuc/miRLAB/logFC.imputed.rda for validation. 
+       If you would like to use experimentally confirmed data only, please use the Validation function")
  load("./logFC.imputed.rda")
  td=logFC.imputed
  
@@ -2816,7 +2818,7 @@ ValidationT=function(topkList, LFC){
 #' Validate the targets of all miRNA using both experimentally confirmed and transfection data
 #' 
 #' Given the predicted target of all miRNA, the function returns a list of targets of each miRNA that are  confirmed
-#' based on the experimentally validated interactions or curated transfection data. 
+#' based on the experimentally validated interactions or curated transfection data. Users need to download the file logFC.imputed.rda from nugget.unisa.edu.au/Thuc/miRLAB/ and place it in the working directory (this file is obtained from the TargetScoreData package)
 #' @param CEmatrix the matrix of correlation/causal effects/scores with columns are miRNAs and rows are mRNAs
 #' @param topk the number of targets of each miRNA that are being validated. 
 #' @param groundtruth the csv file containing the ground truth.
@@ -2825,19 +2827,24 @@ ValidationT=function(topkList, LFC){
 #' @param downreg if TRUE the negative correlation/causal effect/score values will be ranked on the top of the ranking. This is to favour the down regulations.
 #' @return a list of matrices that contains the confirmed interactions by both provided ground truth and built-in transfection data.
 #' @examples 
-#' \dontrun{
-#' dataset=system.file("extdata", "ToyEMT35.csv", package="miRLAB")
-#' ps=Pearson(dataset, cause=1:3, effect=4:18)
-#' groundtruth=system.file("extdata", "groundtruth.csv", package="miRLAB")
-#' results=ValidateAll(ps, 10, groundtruth, LFC=0.5, downreg=TRUE)
-#' }
+#' print("ps=Pearson(dataset, cause=1:3, effect=4:18)")
+#' print("results=ValidateAll(ps, 10, groundtruth, LFC=0.5, downreg=TRUE)")
+#' @export
+# \dontrun{
+# dataset=system.file("extdata", "ToyEMT35.csv", package="miRLAB")
+# ps=Pearson(dataset, cause=1:3, effect=4:18)
+# groundtruth=system.file("extdata", "groundtruth.csv", package="miRLAB")
+# results=ValidateAll(ps, 10, groundtruth, LFC=0.5, downreg=TRUE)
+# }
 ValidateAll=function(CEmatrix, topk, groundtruth, LFC, downreg=TRUE){
 #CEmatrix: the results from a computational method in a matrix format. columns are miRNAs. Rows are genes.
 #causes: the column indices of the causes in the dataset or in the CEMatrix.
 #Top k gene of each miRNA we would like to extract for validation.
 #Groundtruth is the experimentally validated database in .csv format.
 #LFC: log2 fold-change threshold for identifying the groundtruth using miRNA transfection data.
-
+if(!file.exists("logFC.imputed.rda"))
+  stop("Please download the transfection data from nugget.unisa.edu.au/Thuc/miRLAB/logFC.imputed.rda for validation. 
+       If you would like to use experimentally confirmed data only, please use the Validation function")
  causes=1:ncol(CEmatrix)
  NoExpConfirmed=c()
  NoTransConfirmed=c()
@@ -2955,105 +2962,215 @@ filterAndCompare=function(allresults, noVal){
 	
 	result=list(Exp, Trans)
 }
-# 
-# ## Enrichment analysis including GO and KEGG enrichment analysis using two functions: GOBPenrichment and KEGGenrichment ##
-# # The input is a list of gene symbols. For example: Genes <- c("AREG", "FKBP5", "CXCL13", "KLF9", "ZC3H12A", "P4HA1", "TLE1", "CREB3L2", "TXNIP", "PBX1", "GJA1", "ITGB8", "CCL3", "CCND2", "KCNJ15", "CFLAR", "CXCL10", "CYSLTR1", "IGFBP7", "RHOB", "MAP3K5", "CAV2", "CAPN2", "AKAP13", "RND3", "IL6ST", "RGS1", "IRF4", "G3BP1", "SEL1L", "VEGFA", "SMAD1", "CCND1", "CLEC3B", "NEB", "AMD1", "PDCD4", "SCD", "TM2D3", "BACH2", "LDLR", "BMPR1B", "RFXAP", "ASPH", "PTK2B", "SLC1A5", "ENO2", "TRPM8", "SATB1", "MIER1", "SRSF1", "ATF3", "CCL5", "MCM6", "GCH1", "CAV1", "SLC20A1")
-# #@import GSEABase @import Category
-# ## GO BP enrichment analysis, Cutoff is normally set to 0.05 ##
-# #' Functional enrichment analysis
-# #' 
-# #' GO BP enrichment analysis for a gene list
-# #' @importMethodsFrom AnnotationDbi mget Lkeys get
-# #' @importFrom org.Hs.eg.db org.Hs.egSYMBOL2EG org.Hs.egGO
-# #' @importFrom GOstats hyperGTest
-# #' @importFrom Category geneIdsByCategory
-# #' @param Genes a list of gene symbols
-# #' @param Cutoff the significant level, e.g. 0.05
-# #' @examples
-# #'  result = GOBPenrichment(c("ZEB1", "ZEB2"), 0.05)
-# #' @return a list of GO terms for the genes
-# #' @references
-# #' Ashburner, M., Ball, C.A., Blake, J.A., Botstein, D., Butler, H., Cherry, J.M., Davis, A.P., Dolinski, K., Dwight, S.S., Eppig, J.T., Harris, M.A., Hill, D.P., Issel-Tarver, L., Kasarskis, A., Lewis, S., Matese, J.C., Richardson, J.E., Ringwald, M., Rubin, G.M. and Sherlock, G. (2000) Gene Ontology: tool for the unification of biology. Nat. Genet., 25, 25-29.
-# #' 
-# #' @export
-# GOBPenrichment <- function(Genes, Cutoff){
-# 
-# EntrezIDs <- AnnotationDbi::mget(Genes, org.Hs.egSYMBOL2EG, ifnotfound=NA)
-# EntrezIDs <- as.character(EntrezIDs)
-# GOAnnotation <- AnnotationDbi::get("org.Hs.egGO")
-# Universe <- Lkeys(GOAnnotation)
-# Params <- new("GOHyperGParams",
-#                   geneIds=EntrezIDs,
-#                   universeGeneIds=Universe,
-#                   annotation="org.Hs.eg.db",
-#                   ontology="BP",
-#                   pvalueCutoff=Cutoff,
-#                   conditional=FALSE,
-#                   testDirection="over")
-# Over <- hyperGTest(Params)
-# 
-# Glist <- geneIdsByCategory(Over)
-# Glist <- sapply(Glist, function(.ids) {
-#  	.sym <- AnnotationDbi::mget(.ids, envir=org.Hs.eg.db::org.Hs.egSYMBOL, ifnotfound=NA)
-#  	.sym[is.na(.sym)] <- .ids[is.na(.sym)]
-#  	paste(.sym, collapse=";")
-#  	})
-# BP <- summary(Over)
-# BP$Symbols <- Glist[as.character(BP$GOBPID)]
-# # Adjust p-value using Benjamini & Hochberg (BH) method
-# BP$adjustPvalue <-p.adjust(BP$Pvalue, "BH", length(BP$Pvalue))
-# # write.csv(BP,'BPResult.csv')
-# return(BP)
-# }
-# 
-# ## KEGG enrichment analysis, Cutoff is normally set to 0.05 ##
-# ## GO BP enrichment analysis, Cutoff is normally set to 0.05 ##
-# #' Functional enrichment analysis
-# #' 
-# #' KEGG enrichment analysis for a gene list
-# #' @importMethodsFrom AnnotationDbi mget Lkeys get
-# #' @importFrom GOstats hyperGTest
-# #' @importFrom Category geneIdsByCategory
-# #' @importFrom org.Hs.eg.db org.Hs.egSYMBOL2EG org.Hs.egPATH
-# #' @param Genes a list of gene symbols
-# #' @param Cutoff the significant level, e.g. 0.05
-# #' @examples
-# #' \dontrun{
-# #'  result = KEGGenrichment(c("ZEB1", "ZEB2", "JUN", "JUP"), 0.05)
-# #'  }
-# #' @return a list of pathways for the genes
-# #' @references
-# #' Kanehisa, M. and Goto, S. (2000) KEGG: kyoto encyclopedia of genes and genomes. Nucleic Acids Res., 28, 27-30.
-# #' @export
-# KEGGenrichment <- function(Genes, Cutoff){
-# 
-# EntrezIDs <- AnnotationDbi::mget(Genes, org.Hs.egSYMBOL2EG, ifnotfound=NA)
-# EntrezIDs <- as.character(EntrezIDs)
-# KEGGAnnotation <- AnnotationDbi::get("org.Hs.egPATH")
-# Universe <- Lkeys(KEGGAnnotation)
-# Params <- new("KEGGHyperGParams", 
-#                      geneIds=EntrezIDs, 
-#                      universeGeneIds=Universe, 
-#                      annotation="org.Hs.eg.db", 
-#                      categoryName="KEGG", 
-#                      pvalueCutoff=Cutoff,
-#                      testDirection="over")
-# Over <- hyperGTest(Params)
-# KEGG <- summary(Over)
-# 
-# Glist <- geneIdsByCategory(Over)
-# Glist <- sapply(Glist, function(.ids) {
-#  	.sym <- AnnotationDbi::mget(.ids, envir=org.Hs.eg.db::org.Hs.egSYMBOL, ifnotfound=NA)
-#  	.sym[is.na(.sym)] <- .ids[is.na(.sym)]
-#  	paste(.sym, collapse=";")
-#  	})
-# KEGG$Symbols <- Glist[as.character(KEGG$KEGGID)]
-# # Adjust p-value using Benjamini & Hochberg (BH) method
-# KEGG$adjustPvalue <-p.adjust(KEGG$Pvalue, "BH", length(KEGG$Pvalue))
-# # write.csv(KEGG,'KEGGResult.csv')
-# return(KEGG)
-# }
-# 
 
+## Enrichment analysis including GO and KEGG enrichment analysis using two functions: GOBPenrichment and KEGGenrichment ##
+# The input is a list of gene symbols. For example: Genes <- c("AREG", "FKBP5", "CXCL13", "KLF9", "ZC3H12A", "P4HA1", "TLE1", "CREB3L2", "TXNIP", "PBX1", "GJA1", "ITGB8", "CCL3", "CCND2", "KCNJ15", "CFLAR", "CXCL10", "CYSLTR1", "IGFBP7", "RHOB", "MAP3K5", "CAV2", "CAPN2", "AKAP13", "RND3", "IL6ST", "RGS1", "IRF4", "G3BP1", "SEL1L", "VEGFA", "SMAD1", "CCND1", "CLEC3B", "NEB", "AMD1", "PDCD4", "SCD", "TM2D3", "BACH2", "LDLR", "BMPR1B", "RFXAP", "ASPH", "PTK2B", "SLC1A5", "ENO2", "TRPM8", "SATB1", "MIER1", "SRSF1", "ATF3", "CCL5", "MCM6", "GCH1", "CAV1", "SLC20A1")
+#@import GSEABase @import Category
+## GO BP enrichment analysis, Cutoff is normally set to 0.05 ##
+#' Functional enrichment analysis
+#' 
+#' GO BP enrichment analysis for a gene list
+# @importMethodsFrom AnnotationDbi mget Lkeys get
+# @importFrom org.Hs.eg.db org.Hs.egSYMBOL2EG org.Hs.egGO org.Hs.egSYMBOL
+# @import GOstats 
+# @import Category 
+#' @param Genes a list of gene symbols
+#' @param Cutoff the significant level, e.g. 0.05
+#' @examples
+#'  print("result = GOBPenrichment(genelist, 0.05)")
+#' @return a list of GO terms for the genes
+#' @export
+#' @references
+#' Ashburner, M., Ball, C.A., Blake, J.A., Botstein, D., Butler, H., Cherry, J.M., Davis, A.P., Dolinski, K., Dwight, S.S., Eppig, J.T., Harris, M.A., Hill, D.P., Issel-Tarver, L., Kasarskis, A., Lewis, S., Matese, J.C., Richardson, J.E., Ringwald, M., Rubin, G.M. and Sherlock, G. (2000) Gene Ontology: tool for the unification of biology. Nat. Genet., 25, 25-29.
+GOBPenrichment <- function(Genes, Cutoff){
+  
+if(requireNamespace("AnnotationDbi", quitely=TRUE)) {
+  EntrezIDs <- AnnotationDbi::mget(Genes, org.Hs.eg.db::org.Hs.egSYMBOL2EG, ifnotfound=NA)
+  EntrezIDs <- as.character(EntrezIDs)
+  GOAnnotation <- AnnotationDbi::get("org.Hs.egGO")
+  Universe <- AnnotationDbi::Lkeys(GOAnnotation)
+
+  Params <- new("GOHyperGParams",
+                  geneIds=EntrezIDs,
+                  universeGeneIds=Universe,
+                  annotation="org.Hs.eg.db",
+                  ontology="BP",
+                  pvalueCutoff=Cutoff,
+                  conditional=FALSE,
+                  testDirection="over")
+}
+if(requireNamespace("GOstats", quitely=TRUE)) {
+  Over <- GOstats::hyperGTest(Params)
+}
+if(requireNamespace("Category", quitely=TRUE)) {
+  Glist <- Category::geneIdsByCategory(Over)
+}
+if(requireNamespace("AnnotationDbi", quitely=TRUE)){
+Glist <- sapply(Glist, function(.ids) {
+ 	.sym <- AnnotationDbi::mget(.ids, envir=org.Hs.eg.db::org.Hs.egSYMBOL, ifnotfound=NA)
+ 	.sym[is.na(.sym)] <- .ids[is.na(.sym)]
+ 	paste(.sym, collapse=";")
+ 	})
+BP <- summary(Over)
+BP$Symbols <- Glist[as.character(BP$GOBPID)]
+# Adjust p-value using Benjamini & Hochberg (BH) method
+BP$adjustPvalue <-p.adjust(BP$Pvalue, "BH", length(BP$Pvalue))
+# write.csv(BP,'BPResult.csv')
+}
+
+return(BP)
+}
+
+## KEGG enrichment analysis, Cutoff is normally set to 0.05 ##
+## GO BP enrichment analysis, Cutoff is normally set to 0.05 ##
+#' Functional enrichment analysis
+#' KEGG enrichment analysis for a gene list
+# @importMethodsFrom AnnotationDbi mget Lkeys get
+# @import GOstats 
+# @import Category 
+# @importFrom org.Hs.eg.db org.Hs.egSYMBOL2EG org.Hs.egPATH org.Hs.egSYMBOL
+#' @param Genes a list of gene symbols
+#' @param Cutoff the significant level, e.g. 0.05
+#' @examples
+#'  print("result = KEGGenrichment(genelist, 0.05)") 
+#' @return a list of pathways for the genes
+#' @export
+#' @references
+#' Kanehisa, M. and Goto, S. (2000) KEGG: kyoto encyclopedia of genes and genomes. Nucleic Acids Res., 28, 27-30.
+
+KEGGenrichment <- function(Genes, Cutoff){
+
+  if(requireNamespace("AnnotationDbi", quitely=TRUE)){
+EntrezIDs <- AnnotationDbi::mget(Genes, org.Hs.eg.db::org.Hs.egSYMBOL2EG, ifnotfound=NA)
+EntrezIDs <- as.character(EntrezIDs)
+KEGGAnnotation <- AnnotationDbi::get("org.Hs.egPATH")
+Universe <- AnnotationDbi::Lkeys(KEGGAnnotation)
+Params <- new("KEGGHyperGParams", 
+                     geneIds=EntrezIDs, 
+                     universeGeneIds=Universe, 
+                     annotation="org.Hs.eg.db", 
+                     categoryName="KEGG", 
+                     pvalueCutoff=Cutoff,
+                     testDirection="over")
+}
+
+if(requireNamespace("GOstats", quitely=TRUE)){
+  Over <- GOstats::hyperGTest(Params)
+ KEGG <- summary(Over)
+}
+if(requireNamespace("Category", quitely=TRUE)){
+  Glist <- Category::geneIdsByCategory(Over)
+}
+if(requireNamespace("AnnotationDbi", quitely=TRUE)){
+Glist <- sapply(Glist, function(.ids) {
+ 	.sym <- AnnotationDbi::mget(.ids, envir=org.Hs.eg.db::org.Hs.egSYMBOL, ifnotfound=NA)
+ 	.sym[is.na(.sym)] <- .ids[is.na(.sym)]
+ 	paste(.sym, collapse=";")
+ 	})
+KEGG$Symbols <- Glist[as.character(KEGG$KEGGID)]
+# Adjust p-value using Benjamini & Hochberg (BH) method
+KEGG$adjustPvalue <-p.adjust(KEGG$Pvalue, "BH", length(KEGG$Pvalue))
+# write.csv(KEGG,'KEGGResult.csv')
+}
+
+return(KEGG)
+}
+
+#' Function for validate the results from all 12 methods.
+#' @param allmethods A list of results (matrix with columns are miRNA and rows are mRNAs). 
+#' @param topk Top k targets of each miRNA that will be extracted for validation
+#' @param Expgroundtruth The ground truth in .csv file for validation
+#' @param LFC log fold-change for validating the results using transfection experiments
+#' @param downreg If set to TRUE the negative effects will have higher ranks than the positives.
+#' @return The validation results for all 12 methods 
+#' @export
+experiment=function(allmethods, topk, Expgroundtruth, LFC, downreg){
+  
+  psv=ValidateAll(allmethods[[1]], topk, Expgroundtruth, LFC, downreg)
+  spv=ValidateAll(allmethods[[2]], topk, Expgroundtruth, LFC, downreg)
+  kendallv=ValidateAll(allmethods[[3]], topk, Expgroundtruth, LFC, downreg)
+  dcovv=ValidateAll(allmethods[[4]], topk, Expgroundtruth, LFC, downreg)
+  hoeffdingv=ValidateAll(allmethods[[5]], topk, Expgroundtruth, LFC, downreg)
+  miv=ValidateAll(allmethods[[6]], topk, Expgroundtruth, LFC, downreg)
+  idav=ValidateAll(allmethods[[7]], topk, Expgroundtruth, LFC, downreg)
+ # micv=ValidateAll(allmethods[[8]], topk, Expgroundtruth, LFC, downreg, TargetBinding)
+  rdcv=ValidateAll(allmethods[[8]], topk, Expgroundtruth, LFC, downreg)
+  lassov=ValidateAll(allmethods[[9]], topk, Expgroundtruth, LFC, downreg)
+  elasticv=ValidateAll(allmethods[[10]], topk, Expgroundtruth, LFC, downreg)
+  zsv=ValidateAll(allmethods[[11]], topk, Expgroundtruth, LFC, downreg)
+  promisev=ValidateAll(allmethods[[12]], topk, Expgroundtruth, LFC, downreg)
+  
+  #############genenames
+  miRs=colnames(allmethods[[1]])
+  #########decorate and return
+  result1= cbind(psv[[2]], spv[[2]][,2:3], kendallv[[2]][,2:3], dcovv[[2]][,2:3], hoeffdingv[[2]][,2:3], miv[[2]][,2:3], idav[[2]][,2:3], rdcv[[2]][,2:3], lassov[[2]][,2:3], elasticv[[2]][,2:3],zsv[[2]][,2:3], promisev[[2]][,2:3])
+  rownames(result1)=miRs
+  result2= cbind(psv[[4]], spv[[4]][,2:3], kendallv[[4]][,2:3], dcovv[[4]][,2:3], hoeffdingv[[4]][,2:3], miv[[4]][,2:3], idav[[4]][,2:3], rdcv[[4]][,2:3], lassov[[4]][,2:3], elasticv[[4]][,2:3],zsv[[4]][,2:3], promisev[[4]][,2:3])
+  rownames(result2)=miRs
+  result=list(result1, result2)
+  return(result)
+}
+
+## Compare the validation results of 13 built-in methods ##
+#' Filter and compare the validation results from 12 methods
+#' Keep the miRNAs that have at least noVal confirmed targets and compare the validation results from all methods.
+#' @param allresults the results from all methods generated from experiment function. This is a list.
+#' @param noVal Number of confirmed targets in each method (threshold) to filter. Records (miRNA) with less than this will be removed
+#' @return the validation results of all methods
+#' @examples
+#' print("result=filterAndCompare(allresults, 2)")
+#' @export 
+filterAndCompare=function(allresults, noVal){
+  #allresults: the results from all methods generated from experiment function. This is a list
+  #noVal: number of confirmed targets in each method (threshold) to filter. Records (miRNA) with less than this will be removed
+  ExpResult=allresults[[1]]
+  TransResult=allresults[[2]]
+  temp1=apply(ExpResult, 1, function(x) all(x[c(2,4,6,8,10,12,14,16,18,20,22,24)]>(noVal-1)))
+  ExpResult=ExpResult[temp1,]
+  temp2=apply(TransResult, 1, function(x) all(x[c(2,4,6,8,10,12,14,16,18,20,22,24)]>(noVal-1)))
+  TransResult=TransResult[temp2,]
+  ###If else to incase only one record. In that case the result is not a matrix
+  if(is.matrix(ExpResult)){
+    ExpResult=ExpResult[,c(2,4,6,8,10,12,14,16,18,20,22,24)]
+    colnames(ExpResult)=c( "Pearson", "Spearman", "Kendall", " Dcov", "Hoeffding", "MI", "IDA", "RDC", "Lasso", "Elastic", "Z-score", "ProMISe")
+  } else {
+    tt=as.matrix(ExpResult)
+    ExpResult=t(tt)
+    ExpResult=ExpResult[,c(2,4,6,8,10,12,14,16,18,20,22,24)]
+    names(ExpResult)=c( "Pearson", "Spearman", "Kendall", " Dcov", "Hoeffding", "MI", "IDA", "RDC", "Lasso", "Elastic", "Z-score", "ProMISe")
+  }
+  
+  if(is.matrix(TransResult)){
+    TransResult=TransResult[,c(2,4,6,8,10,12,14,16,18,20,22,24)]
+    colnames(TransResult)=c( "Pearson", "Spearman", "Kendall", " Dcov", "Hoeffding", "MI", "IDA", "RDC", "Lasso", "Elastic", "Z-score", "ProMISe")
+  } else {
+    tt=as.matrix(TransResult)
+    TransResult=t(tt)
+    TransResult=TransResult[,c(2,4,6,8,10,12,14,16,18,20,22,24)]
+    #print(TransResult)
+    names(TransResult)=c( "Pearson", "Spearman", "Kendall", " Dcov", "Hoeffding", "MI", "IDA", "RDC", "Lasso", "Elastic", "Z-score", "ProMISe")
+  }
+  if(is.matrix(ExpResult)){
+    numberExpResult=apply(ExpResult, 2, sum)
+    ranking=apply(ExpResult, 1, function(i) rank(i))
+    ranking=t(ranking)
+    rankExpResult=apply(ranking, 2, sum)
+  }
+  if(is.matrix(TransResult)){
+    numberTransResult=apply(TransResult, 2, sum)	
+    rankingT=apply(TransResult, 1, function(i) rank(i))
+    rankingT=t(rankingT)
+    rankTransResult=apply(rankingT, 2, sum)
+  }
+  if(is.matrix(ExpResult)){
+    Exp=list(ExpResult, numberExpResult, rankExpResult)
+  } else Exp=ExpResult
+  
+  if(is.matrix(TransResult)){
+    Trans=list(TransResult, numberTransResult, rankTransResult)
+  } else Trans=TransResult
+  
+  result=list(Exp, Trans)
+}
 
 				
