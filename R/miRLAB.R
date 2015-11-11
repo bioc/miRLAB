@@ -1776,13 +1776,15 @@ ImputeNormData<-function(dataset, r){
 #' @param miR2 the miRNA dataset for condition 1, e.g. normal
 #' @param mR1  the mRNA dataset for condition 1, e.g. cancer
 #' @param mR2  the mRNA dataset for condition 2, e.g. normal
-#' @param topkmiR the number of miRNAs that we would like to extract, e.g. top 50 miRNAs.
-#' @param topkmR the number of mRNAs that we would like to extract, e.g. top 2000 mRNAs.
+#' @param topkmiR the maximum number of miRNAs that we would like to extract, e.g. top 50 miRNAs.
+#' @param topkmR the maximum number of mRNAs that we would like to extract, e.g. top 2000 mRNAs.
+#' @param p.miR cutoff value for adjusted p-values when conducting differentially expressed analysis for miRNAs.
+#' @param p.mR cutoff value for adjusted p-values when conducting differentially expressed analysis for mRNAs.
 #' @return the dataset that includes differentially expressed miRNAs and mRNAs. columns are miRNAs and mRNAs  and rows are samples
 #' @references
 #' Smyth, G.K. (2005). Limma: linear models for microarray data. In Bioinformatics and computational biology solutions using R and Bioconductor (pp. 397-420). Springer New York.
 #' @export
-DiffExpAnalysis=function(miR1, miR2, mR1, mR2,topkmiR, topkmR){
+DiffExpAnalysis=function(miR1, miR2, mR1, mR2,topkmiR, topkmR, p.miR, p.mR){
 	#miR1: miRNA dataset in condition 1, rows are miRNAs, samples are columns
 	#miR2: condition2
 	#mR1, mR2: genes in 2 conditions.
@@ -1818,14 +1820,14 @@ DiffExpAnalysis=function(miR1, miR2, mR1, mR2,topkmiR, topkmR){
 	contrast.matrix=makeContrasts(NormalvCancer=Normal - Cancer, levels=design)
 	miRfit2=contrasts.fit(miRfit, contrast.matrix)
 	miRfit2=eBayes(miRfit2)
-	miRresults=topTable(miRfit2, number= topkmiR, sort.by="p", adjust.method="BH")
+	miRresults=topTable(miRfit2, number= topkmiR, p.value=p.miR, sort.by="p", adjust.method="BH")
 	write.csv(miRresults, file="DiffExpmiR.csv")
 	########## mR ############
 	mRfit=lmFit(mR, design)
 	contrast.matrix=makeContrasts(NormalvCancer=Normal - Cancer, levels=design)
 	mRfit2=contrasts.fit(mRfit, contrast.matrix)
 	mRfit2=eBayes(mRfit2)
-	mRresults=topTable(mRfit2, number= topkmR, sort.by="p", adjust.method="BH")
+	mRresults=topTable(mRfit2, number= topkmR, p.value=p.mR, sort.by="p", adjust.method="BH")
 	write.csv(mRresults, file="DiffExpmR.csv")
         miRSymbol=rownames(miRresults)
         mRSymbol=rownames(mRresults)
@@ -2895,6 +2897,18 @@ if(!file.exists("logFC.imputed.rda"))
 
 
 ## Read external results ##
+#' Read results from other methods
+#' 
+#' Read the results predicted by external methods (methods that are not in this package and may not be implemented in R). Consequently, we can compare the results
+#' predicted by the external methods and results predicted by the methods in the miRLAB package.
+#' @param datacsv the input dataset in csv format
+#' @param cause the column range that specifies the causes (miRNAs), e.g. 1:35
+#' @param effect the column range that specifies the effects (mRNAs), e.g. 36:2000
+#' @param ExtCEcsv score matrix predicted by an external matrix with columns are miRNAs and rows are mRNAs.
+#' @return a matrix of scores predicted by an external matrix and ready for further validation and comparison tasks.
+#' @examples 
+#' print("GenemiR=ReadExtResult(dataset, cause=1:3, effect=4:18, 'genemirresults.csv')")
+#' @export
 ReadExtResult=function(datacsv, cause, effect,  ExtCEcsv){
 	dataset=read.csv(datacsv, header=TRUE, sep=",")
 	genenames=colnames(dataset)
@@ -3172,5 +3186,54 @@ filterAndCompare=function(allresults, noVal){
   
   result=list(Exp, Trans)
 }
+
+#' Convert miRNA symbols from a miRBase version to another 
+#' 
+#' This function convert the miRNAs in the input file from the "source" miRBase version to the "Target" version. 
+#' If users do not know the miRBase version of the input file, please set the source version to 0. The function will match the 
+#' miRNAs in the input file to all miRBase versions to find the most likely miRBase version. Currently, we have versions 16-21.
+#' @param miRNAListFile the input file containing a list of miRNA symbols in csv format
+#' @param sourceV the miRBase version of the input miRNAs, e.g. 16. If users do not know the version, use 0.
+#' @param targetV the miRBase version that we want to convert into, e.g. 21.
+#' @return A csv file in the working directory containing the converted miRNA symbols.
+#' @examples 
+#' miRs=system.file("extdata", "ToymiRs.csv", package="miRLAB")
+#' convert(miRs, 17, 21) 
+#' @export 
+convert = function (miRNAListFile,sourceV,targetV) {
+  load(system.file("extdata", "database.RData", package="miRLAB"))
+  miRNAList = as.matrix( read.csv( miRNAListFile ,header = FALSE) )
+  sourceName = miRNAList
+  sourceVersion = c()
+  targetName = c()
+  targetVersion = c()
+  
+  if (sourceV != 0) # have the source version
+  {
+    location = match( miRNAList, all[,sourceV-14] )
+    isNA = is.na(location)
+    targetVersion[which(!isNA)] = targetV
+    targetVersion[which(isNA)] = NA
+    targetName = all[location, targetV-14]
+    sourceVersion = rep(sourceV,length(miRNAList))
+  }else 
+  {
+    allVersionList = c(all[,2],all[,3],all[,4],all[,5],all[,6],all[,7])
+    location = match(miRNAList, allVersionList)
+    sourceVersion = 16 + (location %/% 2602)
+    isNA = is.na(location)
+    targetVersion[which(!isNA)] = targetV
+    targetVersion[which(isNA)] = NA
+    location = location %% 2602
+    location[which(location == 0)] = 2602
+    targetName = all[location, targetV-14]
+  }
+  
+  res = cbind(sourceName, sourceVersion, targetName, targetVersion)
+  colnames(res) = c("sourceName","sourceVersion","targetName","targetVersion")
+  write.table(res, file="resOfConvert.csv", sep=",",row.names = FALSE,col.names = TRUE)
+}
+
+
 
 				

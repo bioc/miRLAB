@@ -4,7 +4,7 @@
 \alias{DiffExpAnalysis}
 \title{Differentially expressed analysis}
 \usage{
-DiffExpAnalysis(miR1, miR2, mR1, mR2, topkmiR, topkmR)
+DiffExpAnalysis(miR1, miR2, mR1, mR2, topkmiR, topkmR, p.miR, p.mR)
 }
 \arguments{
 \item{miR1}{the miRNA dataset for condition 1, e.g. cancer}
@@ -15,9 +15,13 @@ DiffExpAnalysis(miR1, miR2, mR1, mR2, topkmiR, topkmR)
 
 \item{mR2}{the mRNA dataset for condition 2, e.g. normal}
 
-\item{topkmiR}{the number of miRNAs that we would like to extract, e.g. top 50 miRNAs.}
+\item{topkmiR}{the maximum number of miRNAs that we would like to extract, e.g. top 50 miRNAs.}
 
-\item{topkmR}{the number of mRNAs that we would like to extract, e.g. top 2000 mRNAs.}
+\item{topkmR}{the maximum number of mRNAs that we would like to extract, e.g. top 2000 mRNAs.}
+
+\item{p.miR}{cutoff value for adjusted p-values when conducting differentially expressed analysis for miRNAs.}
+
+\item{p.mR}{cutoff value for adjusted p-values when conducting differentially expressed analysis for mRNAs.}
 }
 \value{
 the dataset that includes differentially expressed miRNAs and mRNAs. columns are miRNAs and mRNAs  and rows are samples
