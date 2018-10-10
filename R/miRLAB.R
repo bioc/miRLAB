@@ -4,1648 +4,183 @@
 # and the index of the miRNA, i.e. column that contains the miNRA. Topk is the number of top k interactions we
 # would like to extract.
 
-###########################################################TCGAAssembler- Module_A.R#####################################
-#############################################################################
-
-# TCGA-Assembler : An open-source R program for downloading, processing and analyzing public TCGA data.
-# Copyright (C) <2014>  <Yitan Zhu>
-# This file is part of TCGA-Assembler.
-
-#  TCGA-Assembler is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
-
-#  TCGA-Assembler is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-
-#  You should have received a copy of the GNU General Public License
-#  along with TCGA-Assembler.  If not, see <http://www.gnu.org/licenses/>.
-############################################################################  
 
 
-##############################################################################
 
-# TCGA-Assembler Version 1.0.3 Module A
 
-##############################################################################
 
+#getData from TCGA by TCGAbiolinks package
+#' @import TCGAbiolinks
+#' @import dplyr
+#' @import SummarizedExperiment
+#' @importFrom utils read.csv
+#' @importFrom utils write.csv
+#' @importFrom methods new
+#' @importFrom stats p.adjust
+#' @importFrom stats cor
+#' @importFrom stats cov
+#' @importFrom stats rnorm
+#' @importFrom stats cancor
+#' @importFrom stats phyper
+#' @importFrom stats median
 #' @import RCurl
 #' @import httr
 #' @import stringr
+#' @import ctc
+#' @import heatmap.plus
 
 
+`%:::%` = function(pkg, fun) get(fun, envir = asNamespace(pkg), inherits = FALSE)
 
+# A list of normal/tumor sample types, you can get 19 types via the command: TCGAbiolinks:::getBarcodeDefinition()$tissue.definition
 
-
-DownloadRNASeqData <-function (traverseResultFile, saveFolderName, cancerType, assayPlatform, dataType = "", tissueType = NULL, inputPatientIDs = NULL, outputFileName = "")
-{
+TCGAdownload = function(CancerType="BRCA", Datatype="miRNA", Platform="miRNA-Seq", SampleType="tumor", ncases) {
+  normal_pos = c(10:14)
+  # tumor_barcode = TCGAbiolinks:::getBarcodeDefinition()$tissue.definition[-normal_pos]
+  # normal_barcode = TCGAbiolinks:::getBarcodeDefinition()$tissue.definition[normal_pos]
+  x <- 'TCGAbiolinks' %:::% 'getBarcodeDefinition'
+  tumor_barcode = x()$tissue.definition[-normal_pos]
+  normal_barcode = x()$tissue.definition[normal_pos]
   
-  options(warn=-1);
+  #find the projects conducted by The Cancer Genome Atlas genome program 
+  project = paste("TCGA-", CancerType, sep = "")
   
-  writeLines("**********************************************************************************");
-  writeLines("");
-  writeLines(paste("Download Gene Expression data of ", cancerType, " patients.", sep = ""));
+  sample_type = switch(tolower(SampleType), 
+                       "tumor" = tumor_barcode,
+                       "normal" = normal_barcode)
   
-  # Check whether specific TCGA patient IDs are inputted. 
-  if (!is.null(inputPatientIDs))
-  {
-    inputPatientIDs = toupper(gsub(pattern = "\\.", replacement = "-", x = inputPatientIDs));
+  switch(tolower(Datatype), 
+         "mirna" = { 
+           #data_category = "Transcriptome Profiling"
+           data_category = "Gene expression"
+           data_type = "miRNA gene quantification"
+           #data_type="miRNA Expression Quantification"
+           file_type = "mirbase20.mirna" 
+         },
+         
+         "mrna" = { 
+           #data_category = "Gene expression"
+           data_category="Gene expression"
+           data_type = "Gene expression quantification"
+           #file_type = ".rsem.genes.normalized_results"
+           file_type = "normalized_results"
+         },
+         
+         "somatic mutation" = { 
+           data_category = "Simple nucleotide variation"
+           data_type = "Simple somatic mutation"
+           file_type = ".automated.somatic.maf"
+         },
+         
+         "clinical" = {
+           result = GDCquery_clinic(project)
+           return(result)
+         },
+         
+         "methylation" = { #get data of methylation
+           data_category = "DNA methylation"
+           data_type = "Methylation beta value"
+           file_type = FALSE
+         }
+  )
+  
+  #eg. function argument Platform = RNA-Seq = experimental.strategy of GDCdownload
+  experimental_strategy = Platform
+  
+  #query all of the cases based on the project and their types of data
+  query = GDCquery(project = project, 
+                   data.category =data_category,
+                   data.type =data_type,
+                   platform = "Illumina HiSeq",
+                   #platform = "IlluminaGA_RNASeqV2",
+                   file.type = file_type,
+                   legacy = TRUE, access = "open", 
+                   experimental.strategy = experimental_strategy,
+                   #sample.type = sample_type,
+                   #barcode=c("TCGA-A2-A1FZ-01A-51R-A14D-07")
+  )
+  print(query$result[[1]])
+  # get barcode for the first [ncases] cases and download them, if ncases = NA then download all
+  if (!missing(ncases)) {
+    getcases = getResults(query)$cases[1:ncases]
+    
+    query = GDCquery(project = project,
+                     data.category = data_category,
+                     data.type = data_type,
+                     file.type = file_type,
+                     legacy = TRUE, access = "open",
+                     experimental.strategy = experimental_strategy,
+                     sample.type = sample_type,
+                     barcode = getcases
+    )
   }
   
-  if ((outputFileName != "") & (!is.null(outputFileName)))
-  {
-    outputFileName = paste(outputFileName, "__", sep = "");
-  }  
+  GDCdownload(query)
   
-  # load directory traverse result and create folder to store output files
-  writeLines("Load information of TCGA data files.");
-  file_url=c() 
-  dir_url=c()
-  upper_file_url=c()
-  load(traverseResultFile);  
-  dir.create(path = saveFolderName, recursive = TRUE);
-  if (assayPlatform == "RNASeqV1")
-  {
-    platform = c("illuminaga_rnaseq", "illuminahiseq_rnaseq"); 
-    Institution = c("unc.edu", "bcgsc.ca");    
-  }
-  if (assayPlatform == "RNASeqV2")
-  {
-    platform = c("illuminaga_rnaseqv2", "illuminahiseq_rnaseqv2"); 
-    Institution = c("unc.edu");    
-  }
-  if (assayPlatform == "Microarray")
-  {
-    platform = c("agilentg4502a_07_3", "ht_hg-u133a", "agilentg4502a_07_1", "agilentg4502a_07_2", "hg-u133_plus_2");
-    Institution = c("unc.edu", "broad.mit.edu", "genome.wustl.edu");
-    dataType = "";
-  }
-  
-  # For returning downloaded data
-  downloadedData = vector("list", 0);     
-  dataIndex = 0;     
-  
-  # download RNASeqV2 data
-  if (assayPlatform == "RNASeqV2")
-  {
-    for (IDin in 1:length(Institution))
-    {
-      for (IDpl in 1:length(platform))
-      {
-        SpecificName = paste(cancerType, "__", Institution[IDin], "__", platform[IDpl], sep = "");
-        SpecificID = grep(pattern = toupper(paste("/", cancerType, "/cgcc/", Institution[IDin], "/", platform[IDpl], "/", sep = "")), x = upper_file_url, ignore.case = FALSE);
-        RNALevel3ID = SpecificID[grep(pattern = toupper("Level_3"), x = upper_file_url[SpecificID], ignore.case = FALSE)];
-        ind = SpecificID[grepEnd(pattern = toupper("sdrf\\.txt"), x = upper_file_url[SpecificID], ignore.case = FALSE)];
-        if (length(ind) == 0)
-        {
-          next;
-        }
-        if (length(ind) > 1)
-        {
-          URL = GetNewestURL(AllURL = file_url[ind]);
-        }else{
-          URL = file_url[ind];
-        }
-        downloadResult = urlReadTable(url = URL);
-        if (downloadResult$errorFlag != 0)
-        {
-          next;
-        }
-        sdrf = toupper(downloadResult$data);
-        
-        level_3_filename_column = max(grep(pattern = "Derived Data File", x = sdrf[1, ], ignore.case = TRUE));
-        DataLevelColID = max(grep(pattern = "Comment \\[TCGA Data Level]", x = sdrf[1, ], ignore.case = TRUE));
-        ExtractNameColID = grep(pattern = "Comment \\[TCGA Barcode]", x = sdrf[1, ], ignore.case = TRUE);
-        RefGenomeColID = grep(pattern = "Comment \\[Genome reference]", x = sdrf[1, ], ignore.case = TRUE);
-        if (length(ExtractNameColID) == 0)
-        {
-          ExtractNameColID = min(grep(pattern = "Extract Name", x = sdrf[1, ], ignore.case = TRUE));          
-        }
-        colnames(sdrf) = sdrf[1, ];
-        sdrf = unique(sdrf[2:dim(sdrf)[1], , drop = FALSE]);
-        Level3_ID = sort(union(which(sdrf[, DataLevelColID] == "LEVEL_3"), which(sdrf[, DataLevelColID] == "LEVEL 3")), decreasing = FALSE);
-        if (length(Level3_ID) == 0)
-        {
-          next;
-        }
-        sdrf = sdrf[Level3_ID, c(ExtractNameColID, level_3_filename_column, RefGenomeColID), drop = FALSE];
-        sdrf = sdrf[!duplicated(sdrf[, 2]), , drop = FALSE];
-        
-        # Only keep the file information for the data types that should be downloaded.
-        keepID = c();
-        for (keep_i in 1:length(dataType))
-        {
-          keepID = c(keepID, grep(pattern = dataType[keep_i], x = sdrf[, 2], ignore.case = TRUE))
-        }
-        sdrf = sdrf[sort(unique(keepID), decreasing = FALSE), , drop = FALSE];
-        
-        # If specific patient TCGA barcodes are inputted, only download the specified samples.
-        if (!is.null(inputPatientIDs))
-        {
-          indInputPatientID = c();
-          for (i in 1:length(inputPatientIDs))
-          {
-            indInputPatientID = c(indInputPatientID, grepBeginning(pattern = toupper(inputPatientIDs[i]), x = sdrf[, 1], ignore.case = FALSE));
-          }
-          if (length(indInputPatientID) == 0)
-          {
-            next;
-          }else{
-            sdrf = sdrf[indInputPatientID, , drop = FALSE];
-          }
-        }
-        
-        # Download data of specified tissue
-        if (!is.null(tissueType))
-        {
-          SampleType = cbind(Options = c("TP", "TR", "TB", "TRBM", "TAP", "TM", "TAM", "THOC", "TBM", "NB", "NT", "NBC", "NEBV", "NBM"),
-                             Code = c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14"));  
-          sdrf = sdrf[substr(sdrf[, 1], 14, 15) %in% SampleType[SampleType[, "Options"] %in% tissueType, "Code"], , drop = FALSE];
-        }
-        
-        if (dim(sdrf)[1] == 0)
-        {
-          next;
-        }
-        
-        # Start to download data files
-        exp_gene = NULL;
-        column_gene = NULL;
-        gene_left_column = NULL;
-        gene_data = NULL;
-        exp_gene_normalized = NULL;
-        column_gene_normalized = NULL;
-        gene_normalized_left_column = NULL;
-        gene_normalized_data = NULL;    
-        
-        exp_isoform = NULL;
-        column_isoform = NULL;
-        isoform_left_column = NULL;
-        isoform_data = NULL;
-        exp_isoform_normalized = NULL;
-        column_isoform_normalized = NULL;
-        isoform_normalized_left_column = NULL;
-        isoform_normalized_data = NULL;    
-        
-        exp_exon = NULL;
-        column_exon = NULL;
-        exon_left_column = NULL;
-        exon_data=NULL;
-        exp_junction = NULL;
-        column_junction = NULL;
-        junction_left_column = NULL;
-        junction_data=NULL;
-        
-        for (i in 1:dim(sdrf)[1])
-        {
-          time1 = proc.time();
-          
-          sample_TCGA_id = sdrf[i, 1];
-          ind = RNALevel3ID[grepEnd(pattern = sdrf[i, 2], x = upper_file_url[RNALevel3ID], ignore.case = FALSE)];
-          if (length(ind) == 0)
-          {
-            next;
-          }
-          if (length(ind) > 1)
-          {
-            URL = GetNewestURL(AllURL = file_url[ind]);
-          }else{
-            URL = file_url[ind];
-          }  
-          downloadResult = urlReadTable(url = URL);
-          if (downloadResult$errorFlag != 0)
-          {
-            next;
-          }
-          s = downloadResult$data;
-          
-          # read gene expression data
-          for (jj in 1:1)
-          {
-            if (length(grep(pattern = toupper("rsem.genes.results"), x = sdrf[i, 2], ignore.case = FALSE)) > 0)
-            {
-              s = s[2:dim(s)[1], , drop = FALSE];
-              I_order_probes = order(s[, 1], decreasing = FALSE);
-              s = s[I_order_probes, , drop = FALSE];
-              if (is.null(gene_left_column))
-              {
-                gene_left_column = s[, c(1, 4), drop = FALSE];
-                gene_data = s[, c(2, 3), drop = FALSE];
-                exp_gene = c(sample_TCGA_id, sample_TCGA_id);
-                column_gene = c("raw_count", "scaled_estimate");
-              }else{
-                if (sum(gene_left_column[, 1] != s[, 1]) > 0)
-                {
-                  next;
-                }
-                gene_data = cbind(gene_data, s[, c(2, 3), drop = FALSE]);
-                exp_gene = c(exp_gene, sample_TCGA_id, sample_TCGA_id);
-                column_gene = c(column_gene, "raw_count", "scaled_estimate");
-              }
-            }
-          }
-          
-          # read gene normalized data
-          for (jj in 1:1)
-          {
-            if (length(grep(pattern = toupper("rsem.genes.normalized_results"), x = sdrf[i, 2], ignore.case = FALSE)) > 0)
-            {
-              s = s[2:dim(s)[1], , drop = FALSE];
-              I_order_probes = order(s[, 1], decreasing = FALSE);
-              s = s[I_order_probes, , drop = FALSE];
-              if (is.null(gene_normalized_left_column))
-              {
-                gene_normalized_left_column = s[, 1, drop = FALSE];
-                gene_normalized_data = s[, 2, drop = FALSE];
-                exp_gene_normalized = sample_TCGA_id;
-                column_gene_normalized = "normalized_count";
-              }else{
-                if (sum(gene_normalized_left_column[, 1] != s[, 1]) > 0)
-                {
-                  next;
-                }
-                gene_normalized_data = cbind(gene_normalized_data, s[, 2, drop = FALSE]);
-                exp_gene_normalized = c(exp_gene_normalized, sample_TCGA_id);
-                column_gene_normalized = c(column_gene_normalized, "normalized_count");
-              }
-            }
-          }          
-          
-          # read isoform data
-          for (jj in 1:1)
-          {
-            if (length(grep(pattern = toupper("rsem.isoforms.results"), x = sdrf[i, 2], ignore.case = FALSE)) > 0)
-            {
-              s = s[2:dim(s)[1], , drop = FALSE];
-              I_order_probes = order(s[, 1], decreasing = FALSE);
-              s = s[I_order_probes, , drop = FALSE];
-              if (is.null(isoform_left_column))
-              {
-                isoform_left_column = s[, 1, drop = FALSE];
-                isoform_data = s[, c(2, 3), drop = FALSE];
-                exp_isoform = c(sample_TCGA_id, sample_TCGA_id);
-                column_isoform = c("raw_count", "scaled_estimate");
-              }else{
-                if (sum(isoform_left_column[, 1] != s[, 1]) > 0)
-                {
-                  next;
-                }
-                isoform_data = cbind(isoform_data, s[, c(2, 3), drop = FALSE]);
-                exp_isoform = c(exp_isoform, sample_TCGA_id, sample_TCGA_id);
-                column_isoform = c(column_isoform, "raw_count", "scaled_estimate");
-              }
-            }
-          }
-          
-          # read isoform normalized data
-          for (jj in 1:1)
-          {
-            if (length(grep(pattern = toupper("rsem.isoforms.normalized_results"), x = sdrf[i, 2], ignore.case = FALSE)) > 0)
-            {
-              s = s[2:dim(s)[1], , drop = FALSE];
-              I_order_probes = order(s[, 1], decreasing = FALSE);
-              s = s[I_order_probes, , drop = FALSE];
-              if (is.null(isoform_normalized_left_column))
-              {
-                isoform_normalized_left_column = s[, 1, drop = FALSE];
-                isoform_normalized_data = s[, 2, drop = FALSE];
-                exp_isoform_normalized = sample_TCGA_id;
-                column_isoform_normalized = "normalized_count";
-              }else{
-                if (sum(isoform_normalized_left_column[, 1] != s[, 1]) > 0)
-                {
-                  next;
-                }
-                isoform_normalized_data = cbind(isoform_normalized_data, s[, 2, drop = FALSE]);
-                exp_isoform_normalized = c(exp_isoform_normalized, sample_TCGA_id);
-                column_isoform_normalized = c(column_isoform_normalized, "normalized_count");
-              }
-            }
-          }          
-          
-          # read exon data
-          for (jj in 1:1)
-          {
-            if (length(grep(pattern = toupper("exon_quantification"), x = sdrf[i, 2], ignore.case = FALSE)) > 0)
-            {
-              s = s[2:dim(s)[1], , drop = FALSE];
-              I_order_probes = order(s[, 1], decreasing = FALSE);
-              s = s[I_order_probes, , drop = FALSE];
-              if (is.null(exon_left_column))
-              {
-                exon_left_column = s[, 1, drop = FALSE];
-                exon_data = s[, 2:4, drop = FALSE];
-                exp_exon = c(sample_TCGA_id, sample_TCGA_id, sample_TCGA_id);
-                column_exon = c("raw_counts", "median_length_normalized", "RPKM");
-              }else{
-                if (sum(exon_left_column[, 1] != s[, 1]) > 0)
-                {
-                  next;
-                }
-                exon_data = cbind(exon_data, s[, 2:4, drop = FALSE]);
-                exp_exon = c(exp_exon, sample_TCGA_id, sample_TCGA_id, sample_TCGA_id);
-                column_exon = c(column_exon, "raw_counts", "median_length_normalized", "RPKM");
-              }
-            }
-          }
-          
-          # read junction data
-          for (jj in 1:1)
-          {
-            if (length(grep(pattern = toupper("junction_quantification"), x = sdrf[i, 2], ignore.case = FALSE)) > 0)
-            {
-              s = s[2:dim(s)[1], , drop = FALSE];
-              I_order_probes = order(s[, 1], decreasing = FALSE);
-              s = s[I_order_probes, , drop = FALSE];
-              if (is.null(junction_left_column))
-              {
-                junction_left_column = s[, 1, drop = FALSE];
-                junction_data = s[, 2, drop = FALSE];
-                exp_junction = sample_TCGA_id;
-                column_junction = "raw_counts";
-              }else{
-                if (sum(junction_left_column[, 1] != s[, 1]) > 0)
-                {
-                  next;
-                }
-                junction_data = cbind(junction_data, s[, 2, drop = FALSE]);
-                exp_junction = c(exp_junction, sample_TCGA_id);
-                column_junction = c(column_junction, "raw_counts");
-              }
-            }
-          }          
-          
-          time = proc.time() - time1;
-          writeLines(paste("Downloaded - ", SpecificName, " - file ", i, " out of ", dim(sdrf)[1], ". ", round(time[3], digits = 1), " seconds elapsed.", sep = ""));
-        }
-        
-        writeLines("Save data to local disk.");
-        ID = str_locate_all(traverseResultFile, "_")[[1]];
-        ID = ID[dim(ID)[1], 2];
-        if (length(grep(pattern = "rsem.genes.results", x = dataType, ignore.case = TRUE)) > 0)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__rsem.genes.results__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", "Hybridization REF", exp_gene), c("gene_id", "transcript_id", column_gene), cbind(gene_left_column, gene_data)), 
-                      file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE); 
-          
-          # For returning downloaded data
-          dataIndex = dataIndex + 1
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", "Hybridization REF", exp_gene), c("gene_id", "transcript_id", column_gene), cbind(gene_left_column, gene_data));
-          names(downloadedData)[dataIndex] = paste(SpecificName, "rsem.genes.results", sep = "__");
-        }
-        if (length(grep(pattern = "rsem.genes.normalized_results", x = dataType, ignore.case = TRUE)) > 0)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__rsem.genes.normalized_results__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_gene_normalized), c("gene_id", column_gene_normalized), cbind(gene_normalized_left_column, gene_normalized_data)), 
-                      file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE); 
-          
-          # For returning downloaded data
-          dataIndex = dataIndex + 1          
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_gene_normalized), c("gene_id", column_gene_normalized), cbind(gene_normalized_left_column, gene_normalized_data));
-          names(downloadedData)[dataIndex] = paste(SpecificName, "rsem.genes.normalized_results", sep = "__");
-        }
-        if (length(grep(pattern = "rsem.isoforms.results", x = dataType, ignore.case = TRUE)) > 0)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__rsem.isoforms.results__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_isoform), c("isoform_id", column_isoform), cbind(isoform_left_column, isoform_data)), 
-                      file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE); 
-          
-          # For returning downloaded data
-          dataIndex = dataIndex + 1          
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_isoform), c("isoform_id", column_isoform), cbind(isoform_left_column, isoform_data));
-          names(downloadedData)[dataIndex] = paste(SpecificName, "rsem.isoforms.results", sep = "__");
-        }
-        if (length(grep(pattern = "rsem.isoforms.normalized_results", x = dataType, ignore.case = TRUE)) > 0)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__rsem.isoforms.normalized_results__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_isoform_normalized), c("isoform_id", column_isoform_normalized), cbind(isoform_normalized_left_column, isoform_normalized_data)), 
-                      file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE);  
-          
-          # For returning downloaded data
-          dataIndex = dataIndex + 1          
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_isoform_normalized), c("isoform_id", column_isoform_normalized), cbind(isoform_normalized_left_column, isoform_normalized_data));
-          names(downloadedData)[dataIndex] = paste(SpecificName, "rsem.isoforms.normalized_results", sep = "__");
-        }
-        if (length(grep(pattern = "exon_quantification", x = dataType, ignore.case = TRUE)) > 0)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__exon_quantification__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_exon), c("exon", column_exon), cbind(exon_left_column, exon_data)), 
-                      file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE);
-          
-          # For returning downloaded data
-          dataIndex = dataIndex + 1          
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_exon), c("exon", column_exon), cbind(exon_left_column, exon_data));
-          names(downloadedData)[dataIndex] = paste(SpecificName, "exon_quantification", sep = "__");
-        }
-        if (length(grep(pattern = "junction_quantification", x = dataType, ignore.case = TRUE)) > 0)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__junction_quantification__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_junction), c("junction", column_junction), cbind(junction_left_column, junction_data)), 
-                      file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE); 
-          
-          # For returning downloaded data
-          dataIndex = dataIndex + 1          
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_junction), c("junction", column_junction), cbind(junction_left_column, junction_data));
-          names(downloadedData)[dataIndex] = paste(SpecificName, "junction_quantification", sep = "__");
-        }
-      }
-    }
-  }
-  
-  # download RNASeqV1 data
-  if (assayPlatform == "RNASeqV1")
-  {
-    for (IDin in 1:length(Institution))
-    {
-      for (IDpl in 1:length(platform))
-      {
-        SpecificName = paste(cancerType, "__", Institution[IDin], "__", platform[IDpl], sep = "");
-        SpecificID = grep(pattern = toupper(paste("/", cancerType, "/cgcc/", Institution[IDin], "/", platform[IDpl], "/", sep = "")), x = upper_file_url, ignore.case = FALSE);
-        RNALevel3ID = SpecificID[grep(pattern = toupper("Level_3"), x = upper_file_url[SpecificID], ignore.case = FALSE)];
-        ind = SpecificID[grepEnd(pattern = toupper("sdrf\\.txt"), x = upper_file_url[SpecificID], ignore.case = FALSE)];
-        if (length(ind) == 0)
-        {
-          next;
-        }
-        if (length(ind) > 1)
-        {
-          URL = GetNewestURL(AllURL = file_url[ind]);
-        }else{
-          URL = file_url[ind];
-        }
-        downloadResult = urlReadTable(url = URL);
-        if (downloadResult$errorFlag != 0)
-        {
-          next;
-        }
-        sdrf = toupper(downloadResult$data);
-        
-        level_3_filename_column = max(grep(pattern = "Derived Data File", x = sdrf[1, ], ignore.case = TRUE));
-        DataLevelColID = max(grep(pattern = "Comment \\[TCGA Data Level]", x = sdrf[1, ], ignore.case = TRUE));
-        ExtractNameColID = grep(pattern = "Comment \\[TCGA Barcode]", x = sdrf[1, ], ignore.case = TRUE);
-        RefGenomeColID = grep(pattern = "Comment \\[Genome reference]", x = sdrf[1, ], ignore.case = TRUE);
-        if (length(ExtractNameColID) == 0)
-        {
-          ExtractNameColID = min(grep(pattern = "Extract Name", x = sdrf[1, ], ignore.case = TRUE));          
-        }
-        colnames(sdrf) = sdrf[1, ];
-        sdrf = unique(sdrf[2:dim(sdrf)[1], , drop = FALSE]);
-        Level3_ID = sort(union(which(sdrf[, DataLevelColID] == "LEVEL_3"), which(sdrf[, DataLevelColID] == "LEVEL 3")), decreasing = FALSE);
-        if (length(Level3_ID) == 0)
-        {
-          next;
-        }
-        sdrf = sdrf[Level3_ID, c(ExtractNameColID, level_3_filename_column, RefGenomeColID), drop = FALSE];
-        sdrf = sdrf[!duplicated(sdrf[, 2]), , drop = FALSE];
-        
-        # Only keep the file information for the data types that should be downloaded.
-        keepID = c();
-        for (keep_i in 1:length(dataType))
-        {
-          keepID = c(keepID, grep(pattern = dataType[keep_i], x = sdrf[, 2], ignore.case = TRUE))
-        }
-        sdrf = sdrf[sort(unique(keepID), decreasing = FALSE), , drop = FALSE];
-        
-        # If specific patient TCGA barcodes are inputted, only download the specified samples.
-        if (!is.null(inputPatientIDs))
-        {
-          indInputPatientID = c();
-          for (i in 1:length(inputPatientIDs))
-          {
-            indInputPatientID = c(indInputPatientID, grepBeginning(pattern = toupper(inputPatientIDs[i]), x = sdrf[, 1], ignore.case = FALSE));
-          }
-          if (length(indInputPatientID) == 0)
-          {
-            next;
-          }else{
-            sdrf = sdrf[indInputPatientID, , drop = FALSE];
-          }
-        }
-        
-        # Download data of specified tissue
-        if (!is.null(tissueType))
-        {
-          SampleType = cbind(Options = c("TP", "TR", "TB", "TRBM", "TAP", "TM", "TAM", "THOC", "TBM", "NB", "NT", "NBC", "NEBV", "NBM"),
-                             Code = c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14"));  
-          sdrf = sdrf[substr(sdrf[, 1], 14, 15) %in% SampleType[SampleType[, "Options"] %in% tissueType, "Code"], , drop = FALSE];
-        }
-        
-        if (dim(sdrf)[1] == 0)
-        {
-          next;
-        }
-        
-        exp_names_gene = NULL;
-        column_gene = NULL;
-        gene_left_column = NULL;
-        gene_RPKM = NULL;
-        
-        exp_names_exon = NULL;
-        column_exon = NULL;
-        exon_left_column = NULL;
-        exon_RPKM = NULL;
-        
-        junction_count = NULL;
-        exp_names_junction = NULL;    
-        column_junction = NULL;     
-        junction_left_column = NULL;        
-        
-        for (i in 1:dim(sdrf)[1])
-        {
-          time1 = proc.time();
-          
-          sample_TCGA_id = sdrf[i, 1];
-          ind = RNALevel3ID[grepEnd(pattern = sdrf[i, 2], x = upper_file_url[RNALevel3ID], ignore.case = FALSE)];
-          if (length(ind) == 0)
-          {
-            next;
-          }
-          if (length(ind) > 1)
-          {
-            URL = GetNewestURL(AllURL = file_url[ind]);
-          }else{
-            URL = file_url[ind];
-          }  
-          downloadResult = urlReadTable(url = URL);
-          if (downloadResult$errorFlag != 0)
-          {
-            next;
-          }
-          s = downloadResult$data;
-          
-          # read gene expression data
-          for (jj in 1:1)
-          {
-            if (length(grep(pattern = toupper("gene.quantification"), x = sdrf[i, 2], ignore.case = FALSE)) > 0)
-            {
-              s = s[2:dim(s)[1], , drop = FALSE];
-              I_order_probes = order(s[, 1], decreasing = FALSE);
-              s = s[I_order_probes, , drop = FALSE];
-              if (is.null(gene_left_column))
-              {
-                gene_left_column = s[, 1, drop = FALSE];
-                gene_RPKM = s[, 2:4, drop = FALSE];
-                exp_names_gene = c(sample_TCGA_id, sample_TCGA_id, sample_TCGA_id);
-                column_gene = c("raw_counts", "median_length_normalized", "RPKM");
-              }else{
-                if (sum(gene_left_column[, 1] != s[, 1]) > 0)
-                {
-                  next;
-                }
-                gene_RPKM = cbind(gene_RPKM, s[, 2:4, drop = FALSE]);
-                exp_names_gene = c(exp_names_gene, sample_TCGA_id, sample_TCGA_id, sample_TCGA_id);
-                column_gene = c(column_gene, "raw_counts", "median_length_normalized", "RPKM");
-              }
-            }
-          }
-          
-          # read exon expression data
-          for (jj in 1:1)
-          {
-            if (length(grep(pattern = toupper("exon.quantification"), x = sdrf[i, 2], ignore.case = FALSE)) > 0)
-            {
-              s = s[2:dim(s)[1], , drop = FALSE];
-              I_order_probes = order(s[, 1], decreasing = FALSE);
-              s = s[I_order_probes, , drop = FALSE];
-              if (is.null(exon_left_column))
-              {
-                exon_left_column = s[, 1, drop = FALSE];
-                exon_RPKM = s[, 2:4, drop = FALSE];
-                exp_names_exon = c(sample_TCGA_id, sample_TCGA_id, sample_TCGA_id);
-                column_exon = c("raw_counts", "median_length_normalized", "RPKM");
-              }else{
-                if (sum(exon_left_column[, 1] != s[, 1]) > 0)
-                {
-                  next;
-                }
-                exon_RPKM = cbind(exon_RPKM, s[, 2:4, drop = FALSE]);
-                exp_names_exon = c(exp_names_exon, sample_TCGA_id, sample_TCGA_id, sample_TCGA_id);
-                column_exon = c(column_exon, "raw_counts", "median_length_normalized", "RPKM");
-              }
-            }
-          }
-          
-          # read junction expression data
-          for (jj in 1:1)
-          {
-            if (length(grep(pattern = toupper("spljxn.quantification"), x = sdrf[i, 2], ignore.case = FALSE)) > 0)
-            {
-              s = s[2:dim(s)[1], , drop = FALSE];
-              I_order_probes = order(s[, 1], decreasing = FALSE);
-              s = s[I_order_probes, , drop = FALSE];
-              if (is.null(junction_left_column))
-              {
-                junction_left_column = s[, 1, drop = FALSE];
-                junction_count = s[, 2, drop = FALSE];
-                exp_names_junction = sample_TCGA_id;
-                column_junction = "raw_counts";
-              }else{
-                if (sum(junction_left_column[, 1] != s[, 1]) > 0)
-                {
-                  next;
-                }
-                junction_count = cbind(junction_count, s[, 2, drop = FALSE]);
-                exp_names_junction = c(exp_names_junction, sample_TCGA_id);
-                column_junction = c(column_junction, "raw_counts");
-              }
-            }
-          }
-          
-          time = proc.time() - time1;
-          writeLines(paste("Downloaded - ", SpecificName, " - file ", i, " out of ", dim(sdrf)[1], ". ", round(time[3], digits = 1), " seconds elapsed.", sep = ""));
-        }
-        
-        writeLines("Save data to local disk.");
-        ID = str_locate_all(traverseResultFile, "_")[[1]];
-        ID = ID[dim(ID)[1], 2];
-        if (length(grep(pattern = "gene.quantification", x = dataType, ignore.case = TRUE)) > 0)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__gene.quantification__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_names_gene), c("gene", column_gene), cbind(gene_left_column, gene_RPKM)), 
-                      file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE);  
-          
-          # For returning downloaded data
-          dataIndex = dataIndex + 1;          
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_names_gene), c("gene", column_gene), cbind(gene_left_column, gene_RPKM));
-          names(downloadedData)[dataIndex] = paste(SpecificName, "gene.quantification", sep = "__");
-        }
-        if (length(grep(pattern = "exon.quantification", x = dataType, ignore.case = TRUE)) > 0)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__exon.quantification__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_names_exon), c("exon", column_exon), cbind(exon_left_column, exon_RPKM)), 
-                      file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE);  
-          
-          # For returning downloaded data
-          dataIndex = dataIndex + 1;
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_names_exon), c("exon", column_exon), cbind(exon_left_column, exon_RPKM));
-          names(downloadedData)[dataIndex] = paste(SpecificName, "exon.quantification", sep = "__");          
-        }
-        if (length(grep(pattern = "spljxn.quantification", x = dataType, ignore.case = TRUE)) > 0)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__spljxn.quantification__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_names_junction), c("junction", column_junction), cbind(junction_left_column, junction_count)), 
-                      file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE);  
-          
-          # For returning downloaded data
-          dataIndex = dataIndex + 1;
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_names_junction), c("junction", column_junction), cbind(junction_left_column, junction_count));
-          names(downloadedData)[dataIndex] = paste(SpecificName, "spljxn.quantification", sep = "__");             
-        }
-      }
-    }
-  }
-  
-  # download Microarray data
-  if (assayPlatform == "Microarray")
-  {
-    for (IDin in 1:length(Institution))
-    {
-      for (IDpl in 1:length(platform))
-      {
-        
-        SpecificName = paste(cancerType, "__", Institution[IDin], "__", platform[IDpl], sep = "");
-        SpecificID = grep(pattern = toupper(paste("/", cancerType, "/cgcc/", Institution[IDin], "/", platform[IDpl], "/", sep = "")), x = upper_file_url, ignore.case = FALSE);
-        RNALevel3ID = SpecificID[grep(pattern = toupper("Level_3"), x = upper_file_url[SpecificID], ignore.case = FALSE)];
-        ind = SpecificID[grepEnd(pattern = toupper("sdrf\\.txt"), x = upper_file_url[SpecificID], ignore.case = FALSE)];
-        if (length(ind) == 0)
-        {
-          next;
-        }
-        if (length(ind) > 1)
-        {
-          URL = GetNewestURL(AllURL = file_url[ind]);
-        }else{
-          URL = file_url[ind];
-        }
-        downloadResult = urlReadTable(url = URL);
-        if (downloadResult$errorFlag != 0)
-        {
-          next;
-        }
-        sdrf = toupper(downloadResult$data);
-        
-        # Derived Array Data Matrix File
-        level_3_filename_column = max(grep(pattern = "Derived Array Data Matrix File", x = sdrf[1, ], ignore.case = TRUE));
-        DataLevelColID = max(grep(pattern = "Comment \\[TCGA Data Level]", x = sdrf[1, ], ignore.case = TRUE));
-        ExtractNameColID = grep(pattern = "Comment \\[TCGA Barcode]", x = sdrf[1, ], ignore.case = TRUE);
-        if (length(ExtractNameColID) == 0)
-        {
-          ExtractNameColID = min(grep(pattern = "Extract Name", x = sdrf[1, ], ignore.case = TRUE));          
-        }
-        colnames(sdrf) = sdrf[1, ];
-        sdrf = unique(sdrf[2:dim(sdrf)[1], , drop = FALSE]);
-        Level3_ID = sort(union(which(sdrf[, DataLevelColID] == "LEVEL_3"), which(sdrf[, DataLevelColID] == "LEVEL 3")), decreasing = FALSE);
-        if (length(Level3_ID) == 0)
-        {
-          next;
-        }
-        sdrf = sdrf[Level3_ID, c(ExtractNameColID, level_3_filename_column), drop = FALSE];
-        sdrf = sdrf[!duplicated(sdrf[, 2]), , drop = FALSE];
-        
-        # If specific patient TCGA barcodes are inputted, only download the specified samples.
-        if (!is.null(inputPatientIDs))
-        {
-          indInputPatientID = c();
-          for (i in 1:length(inputPatientIDs))
-          {
-            indInputPatientID = c(indInputPatientID, grepBeginning(pattern = toupper(inputPatientIDs[i]), x = sdrf[, 1], ignore.case = FALSE));
-          }
-          if (length(indInputPatientID) == 0)
-          {
-            next;
-          }else{
-            sdrf = sdrf[indInputPatientID, , drop = FALSE];
-          }
-        }
-        
-        # Download data of specified tissue
-        if (!is.null(tissueType))
-        {
-          SampleType = cbind(Options = c("TP", "TR", "TB", "TRBM", "TAP", "TM", "TAM", "THOC", "TBM", "NB", "NT", "NBC", "NEBV", "NBM"),
-                             Code = c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14"));  
-          sdrf = sdrf[substr(sdrf[, 1], 14, 15) %in% SampleType[SampleType[, "Options"] %in% tissueType, "Code"], , drop = FALSE];
-        }
-        
-        if (dim(sdrf)[1] == 0)
-        {
-          next;
-        }
-        
-        exp_names_gene = NULL;
-        column_gene = NULL;
-        gene_left_column = NULL;
-        gene_RPKM = NULL;
-        for (i in 1:dim(sdrf)[1])
-        {
-          time1 = proc.time();
-          
-          sample_TCGA_id = sdrf[i, 1];
-          ind = RNALevel3ID[grepEnd(pattern = sdrf[i, 2], x = upper_file_url[RNALevel3ID], ignore.case = FALSE)];
-          if (length(ind) == 0)
-          {
-            next;
-          }
-          if (length(ind) > 1)
-          {
-            URL = GetNewestURL(AllURL = file_url[ind]);
-          }else{
-            URL = file_url[ind];
-          }  
-          downloadResult = urlReadTable(url = URL);
-          if (downloadResult$errorFlag != 0)
-          {
-            next;
-          }
-          s = downloadResult$data;
-          
-          column_gene = c(column_gene, s[2, 2]);
-          s = s[3:dim(s)[1], , drop = FALSE];
-          I_order_probes = order(s[, 1], decreasing = FALSE);
-          s = s[I_order_probes, , drop = FALSE];
-          if (is.null(gene_left_column))
-          {
-            gene_left_column = s[, 1, drop = FALSE];
-            gene_RPKM = s[, 2, drop = FALSE];
-            exp_names_gene = c(sample_TCGA_id);
-          }else{
-            if (sum(gene_left_column[, 1] != s[, 1]) > 0)
-            {
-              next;
-            }
-            gene_RPKM = cbind(gene_RPKM, s[, 2, drop = FALSE]);
-            exp_names_gene = c(exp_names_gene, sample_TCGA_id);
-          }
-          
-          time = proc.time() - time1;
-          writeLines(paste("Downloaded - ", SpecificName, " - file ", i, " out of ", dim(sdrf)[1], ". ", round(time[3], digits = 1), " seconds elapsed.", sep = ""));
-        }
-        
-        writeLines("Save data to local disk.");
-        ID = str_locate_all(traverseResultFile, "_")[[1]];
-        ID = ID[dim(ID)[1], 2];
-        filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__gene.quantification__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-        write.table(rbind(c("Hybridization REF", exp_names_gene), c("Composite Element REF", column_gene), cbind(gene_left_column, gene_RPKM)), 
-                    file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE);  
-        
-        # For returning downloaded data
-        dataIndex = dataIndex + 1;          
-        downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_names_gene), c("Composite Element REF", column_gene), cbind(gene_left_column, gene_RPKM));
-        names(downloadedData)[dataIndex] = paste(SpecificName, "gene.quantification", sep = "__");
-        
-      }
-    }
-  }
-  
-  writeLines("");
-  writeLines("**********************************************************************************");
-  writeLines("\n");
-  
-  options(warn=0);
-  
-  # Return downloaded data
-  if (length(downloadedData) > 0)
-  {
-    for (i in 1:length(downloadedData))
-    {
-      rownames(downloadedData[[i]]) = NULL;
-      colnames(downloadedData[[i]]) = NULL;
-    }
-  }
-  downloadedData;
+  result_tmp =GDCprepare(query)
+  #output
+  switch(tolower(Datatype), 
+         "mirna" = { 
+           rownames(result_tmp) = t(as.character(result_tmp[,1]))
+           result_tmp = as.matrix(result_tmp[,grep("reads_per_million", colnames(result_tmp))])
+           colnames(result_tmp) = substring(colnames(result_tmp), 32)
+           return(result_tmp)
+         },
+         
+         "mrna" = { 
+           return(assay(result_tmp, "normalized_count")) 
+         }, 
+         
+         "somatic mutation" = {
+           return(result_tmp)
+         },
+         
+         "methylation" = {
+           return(assay(result_tmp))
+         }
+  )
 }
 
 
-
-
-DownloadmiRNASeqData <- function(traverseResultFile, saveFolderName, cancerType, assayPlatform = "miRNASeq", tissueType = NULL, inputPatientIDs = NULL, outputFileName = "")
-{
-  options(warn=-1);
-  
-  writeLines("**********************************************************************************");
-  writeLines("");
-  writeLines(paste("Download miRNA-seq data of ", cancerType, " patients.", sep = ""));
-  
-  # Check whether specific TCGA patient IDs are inputted. 
-  if (!is.null(inputPatientIDs))
-  {
-    inputPatientIDs = toupper(gsub(pattern = "\\.", replacement = "-", x = inputPatientIDs));
-  }  
-  
-  if ((outputFileName != "") & (!is.null(outputFileName)))
-  {
-    outputFileName = paste(outputFileName, "__", sep = "");
-  }
-  
-  # For returning downloaded data
-  downloadedData = vector("list", 0);     
-  dataIndex = 0;     
-  
-  # load directory traverse result and create folder to store output files
-  writeLines("Load information of TCGA data files.");
-  file_url=c()
-  upper_file_url=c()
-  load(traverseResultFile);
-  if (assayPlatform == "miRNASeq")
-  {
-    platform = c("illuminaga_mirnaseq", "illuminahiseq_mirnaseq");
-  }
-  dir.create(path = saveFolderName, recursive = TRUE);
-  miRNALevel3ID = grep(pattern = toupper("miRNASeq\\.Level_3"), x = upper_file_url, ignore.case = FALSE);
-  
-  for (IDpl in 1:length(platform))
-  {
-    SpecificName = paste(cancerType, "__", "bcgsc.ca", "__", platform[IDpl], sep = "");
-    SpecificID = grep(pattern = toupper(paste("/", cancerType, "/cgcc/bcgsc\\.ca/", platform[IDpl], sep = "")), x = upper_file_url, ignore.case = FALSE);
-    ind = SpecificID[grepEnd(pattern = toupper("sdrf\\.txt"), x = upper_file_url[SpecificID], ignore.case = FALSE)];
-    if (length(ind) == 0)
-    {
-      next;
-    }
-    if (length(ind) > 1)
-    {
-      URL = GetNewestURL(AllURL = file_url[ind]);
-    }else{
-      URL = file_url[ind];
-    }  
-    downloadResult = urlReadTable(url = URL);
-    if (downloadResult$errorFlag != 0)
-    {
-      next;
-    }
-    sdrf = toupper(downloadResult$data);  
-    
-    # Process SDRF file, identify the columns of level 3 data file name and TCGA sample barcodes.
-    level_3_filename_column = max(grep(pattern = "Derived Data File", x = sdrf[1, ], ignore.case = TRUE));
-    DataLevelColID = max(grep(pattern = "Comment \\[TCGA Data Level]", x = sdrf[1, ], ignore.case = TRUE));
-    ExtractNameColID = min(grep(pattern = "Comment \\[TCGA Barcode]", x = sdrf[1, ], ignore.case = TRUE));
-    RefGenomeColID = grep(pattern = "Comment \\[Genome reference]", x = sdrf[1, ], ignore.case = TRUE);
-    if (length(ExtractNameColID) == 0)
-    {
-      ExtractNameColID = min(grep(pattern = "Extract Name", x = sdrf[1, ], ignore.case = TRUE));
-    }
-    colnames(sdrf) = sdrf[1, ];
-    sdrf = unique(sdrf[2:dim(sdrf)[1], , drop = FALSE]);
-    sdrf = sdrf[!duplicated(sdrf[, level_3_filename_column]), , drop = FALSE];
-    
-    Level3_ID = sort(union(which(sdrf[, DataLevelColID] == "LEVEL_3"), which(sdrf[, DataLevelColID] == "LEVEL 3")), decreasing = FALSE);
-    Level3_ID = sort(intersect(Level3_ID, grep(pattern = toupper("mirna\\.quantification"), 
-                                               x = sdrf[, level_3_filename_column], ignore.case = FALSE)), decreasing = FALSE);
-    if (length(Level3_ID) == 0)
-    {
-      next;
-    }
-    sdrf = sdrf[Level3_ID, c(ExtractNameColID, level_3_filename_column, RefGenomeColID), drop = FALSE];    
-    
-    # If specific patient TCGA barcodes are inputted, only download the specified samples.
-    if (!is.null(inputPatientIDs))
-    {
-      indInputPatientID = c();
-      for (i in 1:length(inputPatientIDs))
-      {
-        indInputPatientID = c(indInputPatientID, grepBeginning(pattern = toupper(inputPatientIDs[i]), x = sdrf[, 1], ignore.case = FALSE));
-      }
-      if (length(indInputPatientID) == 0)
-      {
-        next;      
-      }else{
-        sdrf = sdrf[indInputPatientID, , drop = FALSE];
-      }
-    }
-    
-    # Download data of specified tissue
-    if (!is.null(tissueType))
-    {
-      SampleType = cbind(Options = c("TP", "TR", "TB", "TRBM", "TAP", "TM", "TAM", "THOC", "TBM", "NB", "NT", "NBC", "NEBV", "NBM"),
-                         Code = c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14"));  
-      sdrf = sdrf[substr(sdrf[, 1], 14, 15) %in% SampleType[SampleType[, "Options"] %in% tissueType, "Code"], , drop = FALSE];
-    }
-    
-    if (dim(sdrf)[1] == 0)
-    {
-      next;
-    }
-    
-    sdrfO = sdrf;
-    for (RefGId in 1:2)
-    {
-      if (RefGId == 1)
-      {
-        sdrf = sdrfO[grep(pattern = toupper("NCBI36"), x = sdrfO[, 3], ignore.case = FALSE), , drop = FALSE];  
-      }
-      if (RefGId == 2)
-      {
-        sdrf = sdrfO[grep(pattern = toupper("GRCh37"), x = sdrfO[, 3], ignore.case = FALSE), , drop = FALSE];  
-      }
-      if (dim(sdrf)[1] == 0)
-      {
-        next;
-      }
-      
-      exp_names = NULL;
-      gene_left_column = NULL;
-      gene_RPM = NULL;
-      column_gene = NULL;
-      for (i in 1:dim(sdrf)[1])
-      {
-        time1 = proc.time();
-        
-        sample_TCGA_id = sdrf[i, 1];
-        ind = intersect(miRNALevel3ID, SpecificID[grepEnd(pattern = sdrf[i, 2], x = upper_file_url[SpecificID], ignore.case = FALSE)]);
-        if (length(ind) == 0)
-        {
-          next;
-        }
-        if (length(ind) > 1)
-        {
-          URL = GetNewestURL(AllURL = file_url[ind]);
-        }else{
-          URL = file_url[ind];
-        }  
-        downloadResult = urlReadTable(url = URL);
-        if (downloadResult$errorFlag != 0)
-        {
-          next;
-        }
-        s = downloadResult$data[2:dim(downloadResult$data)[1], , drop = FALSE];
-        I_order_probes = order(s[, 1], decreasing = FALSE);
-        s = s[I_order_probes, , drop = FALSE];
-        if (is.null(gene_left_column))
-        {
-          gene_left_column = s[, 1, drop = FALSE];
-          exp_names = c(sample_TCGA_id, sample_TCGA_id);
-          gene_RPM = s[, 2:3, drop = FALSE];
-          column_gene = c("read_count", "reads_per_million_miRNA_mapped");
-        }else{
-          if (sum(gene_left_column[, 1] != s[ ,1]) > 0)
-          {
-            next;
-          }
-          exp_names = c(exp_names, sample_TCGA_id, sample_TCGA_id);
-          gene_RPM = cbind(gene_RPM, s[, 2:3, drop = FALSE]);
-          column_gene = c(column_gene, "read_count", "reads_per_million_miRNA_mapped");
-        }
-        
-        time = proc.time() - time1;
-        if (RefGId == 1)
-        {
-          writeLines(paste("Downloaded - ", SpecificName, " - NCBI36 - sample ", i, " out of ", dim(sdrf)[1], ". ", round(time[3], digits = 1), " seconds elapsed.", sep = ""));
-        }
-        if (RefGId == 2)
-        {
-          writeLines(paste("Downloaded - ", SpecificName, " - GRCh37 - sample ", i, " out of ", dim(sdrf)[1], ". ", round(time[3], digits = 1), " seconds elapsed.", sep = ""));
-        }
-        
-      }
-      
-      if (!is.null(gene_RPM))
-      {
-        writeLines("Save data to local disk.");
-        ID = str_locate_all(traverseResultFile, "_")[[1]];
-        ID = ID[dim(ID)[1], 2];
-        if (RefGId == 1)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__NCBI36__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_names), c("miRNA_ID", column_gene), cbind(gene_left_column, gene_RPM)), file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE);  
-          
-          # For returning downloaded data
-          dataIndex = dataIndex+1;     
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_names), c("miRNA_ID", column_gene), cbind(gene_left_column, gene_RPM));
-          rownames(downloadedData[[dataIndex]]) = NULL;  
-          colnames(downloadedData[[dataIndex]]) = NULL;          
-          names(downloadedData)[dataIndex] = paste(SpecificName, "__NCBI36", sep = "");
-        }
-        if (RefGId == 2)
-        {
-          filename = paste(saveFolderName, "/", outputFileName, SpecificName, "__GRCh37__", substr(traverseResultFile, ID+1, nchar(traverseResultFile)-4), ".txt", sep = "");
-          write.table(rbind(c("Hybridization REF", exp_names), c("miRNA_ID", column_gene), cbind(gene_left_column, gene_RPM)), file = filename, quote = FALSE, sep = "\t", na = "", col.names = FALSE, row.names = FALSE);  
-          
-          # For returning downloaded data
-          dataIndex = dataIndex+1;     
-          downloadedData[[dataIndex]] = rbind(c("Hybridization REF", exp_names), c("miRNA_ID", column_gene), cbind(gene_left_column, gene_RPM));
-          rownames(downloadedData[[dataIndex]]) = NULL;  
-          colnames(downloadedData[[dataIndex]]) = NULL;
-          names(downloadedData)[dataIndex] = paste(SpecificName, "__GRCh37", sep = "");
-        }
-      }
-      
-    }
-  }
-  
-  writeLines("");
-  writeLines("**********************************************************************************");
-  writeLines("\n");
-  
-  options(warn=0);
-  
-  downloadedData;
-}
-
-
-
-######################### Auxiliary Functions of Module A #####################################################
-
-# urlReadTable is the function to read a data table from a website and pass it to a variable.
-
-# Input arguments:
-# url: URl of the website from which data table will be obtained.
-
-# Output argument:
-# data: a character matrix holding the data table obtained from website. 
-
-urlReadTable <- function(url)
-{
-  
-  data = try(content(GET(url), as = "text"), silent = TRUE);
-  if (class(data) == "try-error")
-  {
-    return(list(data = data, errorFlag = 1));    
-  }
-  if (length(grep(pattern = "HTTP 404: Page Not Found\n\nThe page you requested was not found.", x = data, ignore.case = TRUE)) > 0)
-  {
-    return(list(data = data, errorFlag = 2)); 
-  }
-  data = gsub(pattern = "\r", replacement = "", x = data);
-  data = as.matrix(read.table(text = data, sep="\t", fill = TRUE, quote = NULL, check.names = FALSE));
-    
-  return(list(data = data, errorFlag = 0));
-}
-
-
-
-# downloadFile is a function to download content from a website and save it as a local file.
-
-# Input arguments:
-# url: URl of the website whose content to be obtained.
-# saveFileName: path and name of the file to store the web content.
-##########delete downloadFile as we may not need it.
-
-
-
-# grepEnd is a function similar to grep but identifies the strings with pattern at the end of the strings.
-grepEnd <- function(pattern, x, ignore.case = FALSE)
-{
-  ind = grep(pattern = pattern, x = x, ignore.case = ignore.case);
-  if (ignore.case)
-  {
-    ind = ind[nchar(x[ind]) == sapply(str_locate_all(toupper(x[ind]), pattern = toupper(pattern)), function(y){y[dim(y)[1], 2]})];    
-  }else{
-    ind = ind[nchar(x[ind]) == sapply(str_locate_all(x[ind], pattern = pattern), function(y){y[dim(y)[1], 2]})];    
-  }
-}
-
-
-
-# grepBeginning is a function similar to grep but identifies the strings with pattern at the Beginning of the strings.
-grepBeginning <- function(pattern, x, ignore.case = FALSE)
-{
-  ind = grep(pattern = pattern, x = x, ignore.case = ignore.case);
-  if (ignore.case)
-  {
-    ind = ind[rep(1, length(ind)) == sapply(str_locate_all(toupper(x[ind]), pattern = toupper(pattern)), function(y)y[1, 1])];    
-  }else{
-    ind = ind[rep(1, length(ind)) == sapply(str_locate_all(x[ind], pattern = pattern), function(y)y[1, 1])];    
-  }
-}
-
-
-
-# This function analyzes a TCGA webpage and identify all files and directories on it. 
-# The URLs of files and directories are returned using two character vectors.
-
-# Input arguments:
-# TCGA_link: a string of URL for the TCGA webpage to be analyzed.
-
-# Output arguments:
-# file_url: a character vector, including the URLs of all files on the webpage.
-# dir_url: a character vector, including the URLs of all directories on the webpage.
-
-
-############Delete getTCGA_URL as it is only needed for TraverseAllDirectories to get the general directories. We are using the downloaded file instead.
-
-
-# This function selects the newest file URL from all the input URLs by considering the
-# last folder name tail numbers. The number format is *.*.*
-
-GetNewestURL <- function(AllURL)
-{
-  SeriesNum = matrix(rep("", length(AllURL)*3), length(AllURL), 3);
-  NumLength = rep(0, 3);
-  SN = rep("", length(AllURL));
-  for (i in 1:length(AllURL))
-  {
-    Str = AllURL[i];
-    SepID = str_locate_all(string = Str, pattern = "/")[[1]];
-    SepID = SepID[(dim(SepID)[1]-1):dim(SepID)[1], 1];
-    Str = substr(Str, SepID[1]+1, SepID[2]-1);
-    Str = strsplit(Str, split = "\\.")[[1]];
-    SeriesNum[i, ] = Str[(length(Str)-2) : length(Str)];
-    NumLength[1] = max(NumLength[1], nchar(SeriesNum[i, 1]));
-    NumLength[2] = max(NumLength[2], nchar(SeriesNum[i, 2]));
-    NumLength[3] = max(NumLength[3], nchar(SeriesNum[i, 3]));    
-  }
-  
-  for (i in 1:length(AllURL))
-  {
-    for (j in 1:3)
-    {
-      if (nchar(SeriesNum[i, j]) < NumLength[j])
-      {
-        SeriesNum[i, j] = paste(paste(rep("0", NumLength[j] - nchar(SeriesNum[i, j])), collapse = ""), SeriesNum[i, j], sep = "");
-      }
-    }
-    SN[i] = paste(SeriesNum[i, ], collapse = "");
-  }
-  AllURL[which.max(as.numeric(SN))];
-}
-
-
-
-
-#######################################################end TCGAAssembler - ModuleA.R######################################
-#######################################################TCGAAssembler - MOduleB.R########################################
-######################### Main Functions of Module B #############################################################
-
-CombineMultiPlatformData<-function(inputDataList, combineStyle = "Intersect")
-{
-  options(warn=-1);
-  
-  for (i in 1:length(inputDataList))
-  {
-    
-    # Keep only one sample for a tissue type of a patient. Usually, there is only one sample of a tissue type of a patient existing in data.
-    inputDataList[[i]]$Data = ToPatientData(inputDataList[[i]]$Data);
-    if (i == 1)
-    {
-      sample = colnames(inputDataList[[i]]$Data);
-    }
-    # For each genomic feature, keep only one row of data.
-    Result = CombineRedundantFeature(Data = inputDataList[[i]]$Data, Des = inputDataList[[i]]$Des);
-    
-    inputDataList[[i]]$Des = Result$Des;
-    inputDataList[[i]]$Data = Result$Data;
-    if (combineStyle == "Intersect")
-    {
-      sample = sort(intersect(sample, colnames(inputDataList[[i]]$Data)));
-    }
-    if (combineStyle == "Union")
-    {
-      sample = sort(union(sample, colnames(inputDataList[[i]]$Data)));
-    }    
-    if (dim(inputDataList[[i]]$Des)[2] == 1)
-    {
-      inputDataList[[i]]$Des = cbind(inputDataList[[i]]$Des, Description = cbind(rep("", dim(inputDataList[[i]]$Des)[1])));
-    }
-    else
-    {
-      if ((dim(inputDataList[[i]]$Des)[2] == 3) && (inputDataList[[i]]$dataType == "CNA"))
-      {
-        inputDataList[[i]]$Des = cbind(inputDataList[[i]]$Des[, 1, drop = FALSE], 
-                                       Description = paste(inputDataList[[i]]$Des[, 2], inputDataList[[i]]$Des[, 3], sep = ""));
-      }
-    }
-    
-    if (inputDataList[[i]]$dataType == "miRNAExp")
-    {
-      for (kk in 1:dim(inputDataList[[i]]$Des)[1])
-      {
-        inputDataList[[i]]$Des[kk, 1] = paste(substr(inputDataList[[i]]$Des[kk, 1], 5, 7), substr(inputDataList[[i]]$Des[kk, 1], 9, 100), sep = "");
-      }
-      inputDataList[[i]]$Des[, 1] = toupper(inputDataList[[i]]$Des[, 1]);
-    }
-    
-    # for combining methylation data at CpG site level.
-    if (inputDataList[[i]]$dataType == "Methylation")
-    {    
-      if (sum(toupper(c("REF", "GeneSymbol", "ChromosomeID", "CoordinateID")) %in% toupper(colnames(inputDataList[[i]]$Des))) == 4)
-      {
-        inputDataList[[i]]$Des = cbind(inputDataList[[i]]$Des[, "GeneSymbol", drop = FALSE], 
-                                       Description = paste(inputDataList[[i]]$Des[, "REF"], inputDataList[[i]]$Des[, "ChromosomeID"], 
-                                                           inputDataList[[i]]$Des[, "CoordinateID"], sep = "|"));
-        inputDataList[[i]]$Des[, "Description"] = gsub(" ", "", inputDataList[[i]]$Des[, "Description"]);
-      }
-    }
-    
-    inputDataList[[i]]$Des = switch(inputDataList[[i]]$dataType,
-                                    GeneExp = cbind(inputDataList[[i]]$Des[, "GeneSymbol", drop = FALSE], 
-                                                    Platform = rep("GE", dim(inputDataList[[i]]$Des)[1]), Description = inputDataList[[i]]$Des[, 2]),
-                                    ProteinExp = cbind(inputDataList[[i]]$Des[, "GeneSymbol", drop = FALSE], 
-                                                       Platform = rep("PE", dim(inputDataList[[i]]$Des)[1]), Description = inputDataList[[i]]$Des[, 2]),                                    
-                                    Methylation = cbind(inputDataList[[i]]$Des[, "GeneSymbol", drop = FALSE], 
-                                                        Platform = rep("ME", dim(inputDataList[[i]]$Des)[1]), Description = inputDataList[[i]]$Des[, 2]),                                    
-                                    CNA = cbind(inputDataList[[i]]$Des[, "GeneSymbol", drop = FALSE], 
-                                                Platform = rep("CN", dim(inputDataList[[i]]$Des)[1]), Description = inputDataList[[i]]$Des[, 2]), 
-                                    miRNAExp = cbind(inputDataList[[i]]$Des[, "GeneSymbol", drop = FALSE],
-                                                     Platform = rep("miRExp", dim(inputDataList[[i]]$Des)[1]), Description = inputDataList[[i]]$Des[, 2]));
-    
-    # check NA gene. which(inputDataList[[i]]$Des[, "GeneSymbol"] != "NA")
-    ID = intersect(which(!is.na(inputDataList[[i]]$Des[, "GeneSymbol"])), 
-                   which(inputDataList[[i]]$Des[, "GeneSymbol"] != "?"));
-    inputDataList[[i]]$Des = inputDataList[[i]]$Des[ID, , drop = FALSE];
-    inputDataList[[i]]$Data = inputDataList[[i]]$Data[ID, , drop = FALSE];    
-    
-  }
-  
-  for (i in 1:length(inputDataList))
-  {
-    # Get the data of samples that should be kept
-    if (combineStyle == "Intersect")
-    {
-      inputDataList[[i]]$Data = inputDataList[[i]]$Data[, sample, drop = FALSE];  
-    }
-    if (combineStyle == "Union")
-    {
-      tempData = matrix(NA, dim(inputDataList[[i]]$Data)[1], length(sample));
-      colnames(tempData) = sample;
-      tempData[, colnames(inputDataList[[i]]$Data)] = inputDataList[[i]]$Data;
-      inputDataList[[i]]$Data = tempData;  
-    }
-    rownames(inputDataList[[i]]$Data) = NULL;
-    rownames(inputDataList[[i]]$Des) = NULL;  
-  }
-  
-  # Combine the datasets into matrix format
-  Data = inputDataList[[1]]$Data;
-  Des = inputDataList[[1]]$Des;  
-  for (i in 2:length(inputDataList))
-  {
-    Data = rbind(Data, inputDataList[[i]]$Data);
-    Des = rbind(Des, inputDataList[[i]]$Des);    
-  } 
-  
-  OrderID = order(as.character(Des[, "GeneSymbol"]), as.character(Des[, "Platform"]), 
-                  as.character(Des[, "Description"]), na.last = TRUE, decreasing = FALSE);
-  Data = Data[OrderID, , drop = FALSE];
-  Des = Des[OrderID, , drop = FALSE];
-  rownames(Data) = NULL;
-  rownames(Des) = NULL;
-  Result = list(Des = Des, Data = Data);
-  
-  options(warn=0);
-  
-  Result;
-}
-
-##########delete ExtractTissueSpecificSamples
-
-
-ProcessRNASeqData<-function(inputFilePath, outputFileName, outputFileFolder, dataType, verType)
-{
-  options(warn=-1);
-  
-  dir.create(path = outputFileFolder, recursive = TRUE);
-  
-  # Read in data.
-  InData = read.table(file = inputFilePath, header = TRUE, sep = "\t", na.strings = "", stringsAsFactors = FALSE, quote = "", check.names = FALSE);
-  InData = InData[2:dim(InData)[1], , drop = FALSE];  
-  if ((dataType == "GeneExp") & (verType == "RNASeqV1"))
-  {
-    REF = InData[, 1];
-    RPKM = as.matrix(InData[, seq(4, dim(InData)[2], 3), drop = FALSE]);
-    mode(RPKM) = "numeric";
-    GeneSymbol = sapply(strsplit(REF, split = "\\|"), function(x)x[1]);
-    EntrezID = sapply(strsplit(REF, split = "\\|"), function(x)x[2]);
-    Des = cbind(GeneSymbol = GeneSymbol, EntrezID = EntrezID);
-    Data = RPKM;
-    #Check and Correct gene symbol
-    Des = CheckGeneSymbol(Des);    
-  }
-  if (dataType == "ExonExp")
-  {
-    REF = InData[, 1];
-    RPKM = as.matrix(InData[, seq(4, dim(InData)[2], 3), drop = FALSE]);
-    mode(RPKM) = "numeric";
-    Des = cbind(ExonID = REF);
-    Data = RPKM;    
-  }
-  if ((dataType == "GeneExp") & (verType == "RNASeqV2"))
-  {
-    REF = InData[, 1];
-    NormalizedCount = as.matrix(InData[, 2:dim(InData)[2], drop = FALSE]);
-    mode(NormalizedCount) = "numeric";
-    GeneSymbol = sapply(strsplit(REF, split = "\\|"), function(x)x[1]);
-    EntrezID = sapply(strsplit(REF, split = "\\|"), function(x)x[2]);
-    Des = cbind(GeneSymbol = GeneSymbol, EntrezID = EntrezID);
-    Data = NormalizedCount;    
-    #Check and Correct gene symbol
-    Des = CheckGeneSymbol(Des);     
-  }
-  if (verType == "Microarray")
-  {
-    dataType = "GeneExp";
-    REF = InData[, 1];
-    Data = as.matrix(InData[, 2:dim(InData)[2], drop = FALSE]);
-    mode(Data) = "numeric";
-    Des = cbind(GeneSymbol = REF, EntrezID = rep("", length(REF)));
-    #Check and Correct gene symbol
-    Des = CheckGeneSymbol(Des);     
-  }
-  
-  if (dataType == "GeneExp")
-  {
-    # Draw and save a box plot
-    png(filename = paste(outputFileFolder, "/", outputFileName, "__boxplot.png", sep = ""), width = 30*dim(Data)[2]+300, height = 1500, units = "px");
-    par(las = 2, mai = c(4.5, 1, 0.5, 1), cex = 1.5);
-    nonNaID = which(!is.na(Data));
-    if ((sum(Data[nonNaID]<0)==0) && (max(Data[nonNaID])>50))
-    {
-      boxplot(log2(Data), main = "Boxplot drawn based on log2 tranformed data.");
-    } else {
-      boxplot(Data);
-    }
-    dev.off(); 
-  }
-  
-  # save data files
-  rownames(Data) = NULL;
-  rownames(Des) = NULL;
-  save(Des, Data, file = paste(outputFileFolder, "/", outputFileName, ".rda", sep = ""));
-  write.table(cbind(Des, Data), file = paste(outputFileFolder, "/", outputFileName, ".txt", sep = ""), quote = FALSE, 
-              sep = "\t", na = "", col.names = TRUE, row.names = FALSE); 
-  
-  options(warn=0);
-  
-  return(list(Data = Data, Des = Des)); 
-}
-
-
-
-ProcessmiRNASeqData<-function(inputFilePath, outputFileName, outputFileFolder, fileSource = "TCGA-Assembler")
-{
-  options(warn=-1);
-  
-  dir.create(path = outputFileFolder, recursive = TRUE);
-  
-  # Read in data.
-  InData = read.table(file = inputFilePath, header = TRUE, sep = "\t", na.strings = "", quote = "", stringsAsFactors = FALSE, check.names = FALSE);
-  InData = InData[2:dim(InData)[1], , drop = FALSE];
-  
-  # divide read cout data and RPM data
-  REF = InData[, 1];  
-  if (fileSource == "Firehose")
-  {
-    Count = as.matrix(InData[, seq(2, dim(InData)[2], 3), drop = FALSE]);
-    RPM = as.matrix(InData[, seq(3, dim(InData)[2], 3), drop = FALSE]);
-  }
-  if (fileSource == "TCGA-Assembler")
-  {
-    Count = as.matrix(InData[, seq(2, dim(InData)[2], 2), drop = FALSE]);
-    RPM = as.matrix(InData[, seq(3, dim(InData)[2], 2), drop = FALSE]);    
-  }
-  #  rownames(Count) = REF;  
-  mode(Count) = "numeric";
-  #  rownames(RPM) = REF;
-  mode(RPM) = "numeric";
-  
-  #   #   Draw and save box plot
-  #   png(filename = paste(outputFileFolder, "/", outputFileName, "__ReadCount.boxplot.png", sep = ""), width = 30*dim(Count)[2]+300, height = 1500, units = "px");
-  #   par(las = 2, mai = c(4.5, 1, 0.5, 1), cex = 1.5);
-  #   boxplot(log2(Count));
-  #   dev.off();
-  #   png(filename = paste(outputFileFolder, "/", outputFileName, "__RPM.boxplot.png", sep = ""), width = 30*dim(RPM)[2]+300, height = 1500, units = "px");
-  #   par(las = 2, mai = c(4.5, 1, 0.5, 1), cex = 1.5);
-  #   boxplot(log2(RPM));
-  #   dev.off();  
-  
-  #save data files
-  Des = cbind(GeneSymbol = REF);
-  Data = Count;
-  rownames(Data) = NULL;
-  rownames(Des) = NULL;
-  save(Des, Data, file = paste(outputFileFolder, "/", outputFileName, "__ReadCount.rda", sep = ""));
-  write.table(cbind(Des, Data), file = paste(outputFileFolder, "/", outputFileName, "__ReadCount.txt", sep = ""), quote = FALSE, 
-              sep = "\t", na = "", col.names = TRUE, row.names = FALSE); 
-  Data = RPM; 
-  rownames(Data) = NULL;
-  save(Des, Data, file = paste(outputFileFolder, "/", outputFileName, "__RPM.rda", sep = ""));
-  write.table(cbind(Des, Data), file = paste(outputFileFolder, "/", outputFileName, "__RPM.txt", sep = ""), quote = FALSE, 
-              sep = "\t", na = "", col.names = TRUE, row.names = FALSE); 
-  
-  options(warn=0);
-  
-  return(list(Data = Data, Des = Des)); 
-}
-
-
-
-CheckGeneSymbol<-function(Des)
-{
-  data("hgnc.table", package="HGNChelper", envir=environment());
-  hgnc.table = rbind(hgnc.table, c("13-SEP", "SEPT7P2"));
-  rID = intersect(which(toupper(hgnc.table[, "Symbol"]) == toupper("NCRNA00185")), 
-                  which(toupper(hgnc.table[, "Approved.Symbol"]) == toupper("TTTY14")));
-  hgnc.table = hgnc.table[sort(setdiff(1:dim(hgnc.table)[1], rID)), , drop = FALSE];
-  hgnc.table = hgnc.table[which(!is.na(hgnc.table[, "Approved.Symbol"])), , drop = FALSE];
-  regex = "[0-9]\\-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)|[0-9]\\.[0-9][0-9]E\\+[[0-9][0-9]";
-  MonthID = grep(pattern = regex, hgnc.table[, 1], ignore.case = TRUE);
-  MonthMappingTable = hgnc.table[MonthID, , drop = FALSE];
-  Des[, "GeneSymbol"] = sub("(.*C[0-9XY]+)ORF(.+)", "\\1orf\\2", Des[, "GeneSymbol"]);
-  ID = intersect(which(!Des[, "GeneSymbol"] %in% hgnc.table[, "Approved.Symbol"]), which(Des[, "GeneSymbol"] %in% hgnc.table[, "Symbol"]));
-  DesOrg = Des;
-  if (length(ID) > 0)
-  {
-    Des[ID, "GeneSymbol"] = sapply(Des[ID, "GeneSymbol"], function(x)paste(hgnc.table[hgnc.table[, "Symbol"] == x, "Approved.Symbol"], collapse = "___"));
-  }
-  #  writeLines("Changed genes are");
-  #  print(cbind(DesOrg[ID, "GeneSymbol"], Des[ID, "GeneSymbol"]));  
-  ID = intersect(which(!Des[, "GeneSymbol"] %in% hgnc.table[, "Approved.Symbol"]), which(toupper(Des[, "GeneSymbol"]) %in% toupper(MonthMappingTable[, "Symbol"])));
-  if (length(ID) > 0)
-  {
-    Des[ID, "GeneSymbol"] = sapply(Des[ID, "GeneSymbol"], function(x)paste(MonthMappingTable[toupper(MonthMappingTable[, "Symbol"]) == toupper(x), "Approved.Symbol"], collapse = "___"));
-  }
-  #  writeLines("Changed genes are");
-  #  print(cbind(DesOrg[ID, "GeneSymbol"], Des[ID, "GeneSymbol"]));  
-  Des;
-}
-
-#delete ProcessRPPADataWithGeneAnnotation
-
-######################### Auxiliary Functions of Module B #############################################################
-
-ToPatientData<-function(TCGAData)
-{
-  TCGABarcode = colnames(TCGAData);
-  TCGABarcode = sapply(strsplit(TCGABarcode, split = "-"), function(x){
-    Str = paste(x[1], x[2], x[3], substr(x[4], 1, 2), sep = "-");
-    Str;
-  });
-  DuplicatedLabel = duplicated(TCGABarcode);
-  ID = which(DuplicatedLabel == FALSE);
-  TCGAData = TCGAData[, ID, drop = FALSE];
-  TCGABarcode = TCGABarcode[ID];
-  colnames(TCGAData) = TCGABarcode;
-  TCGAData;
-}
-
-
-
-CombineRedundantFeature <- function(Data, Des)
-{
-  RowName = Des[, 1];
-  if (dim(Des)[2] > 1)
-  {
-    for (i in 2:dim(Des)[2])
-    {
-      RowName = paste(RowName, Des[, i], sep = "||");
-    }
-  }
-  
-  UniqueRowName = unique(RowName);
-  if (length(RowName) == length(UniqueRowName))
-  {
-    Result = list(Data = Data, Des = Des);
-  }
-  else
-  {
-    IDKeep = c();
-    for (i in 1:length(UniqueRowName))
-    {
-      IDi = which(RowName == UniqueRowName[i]);
-      if (length(IDi) > 1)
-      {
-        Data[IDi[1], ] = apply(Data[IDi, , drop = FALSE], 2, mean, na.rm = TRUE);
-      }
-      IDKeep = c(IDKeep, IDi[1]);
-    }
-    IDKeep = sort(IDKeep);
-    Result = list(Data = Data[IDKeep, , drop = FALSE], Des = Des[IDKeep, , drop = FALSE]);
-  }
-  Result;
-}
-
-
-###delete normalize.quantiles
-
-
-#####################
-############Delete VCwebContent
-
-
-#######################################################end TCGAAssembler ModulB.R###########################
-
-
-
-
-#' Get data from TCGA
-#' 
-#' Download matched miRNA and mRNA expression profiles from TCGA using TCGA Assembler. In order to this function to work, users need to download the
-#' the file "DirectoryTraverseResult_Jul-08-2014.rda" from nugget.unisa.edu.au/Thuc/miRLAB/ and place it in the working directory 
-
-#' @param CancerName The name of cancer using abbreviation of cancer name as one of the followings:
-#' \itemize{
-#' \item Adrenocortical carcinoma: ACC
-#' \item Bladder urothelial carcinoma: BLCA
-#' \item Breast invasive carcinoma: BRCA
-#' \item Cervical squamous cell carcinoma and endocervical adenocarcinoma: CESC
-#' \item Colon adenocarcinoma: COAD
-#' \item Lymphoid neoplasm diffuse large B-cell lymphoma: DLBC
-#' \item Esophageal carcinoma: ESCA
-#' \item Glioblastoma multiforme: GBM
-#' \item Head and neck squamous cell carcinoma: HNSC
-#' \item Kidney chromophobe: KICH
-#' \item Kidney renal clear cell carcinoma: KIRC
-#' \item Kidney renal papillary cell carcinoma: KIRP
-#' \item Acute myeloid leukemia: LAML
-#' \item Brain lower grade glioma: LGG
-#' \item Liver hepatocellular carcinoma: LIHC
-#' \item Lung adenocarcinoma: LUAD
-#' \item Lung squamous cell carcinoma: LUSC
-#' \item Ovarian serous cystadenocarcinoma: OV
-#' \item Pancreatic adenocarcinoma: PAAD
-#' \item Prostate adenocarcinoma: PRAD
-#' \item Rectum adenocarcinoma: READ
-#' \item Sarcoma: SARC
-#' \item Skin cutaneous melanoma: SKCM
-#' \item Stomach adenocarcinoma: STAD
-#' \item Thyroid carcinoma: THCA
-#' \item Uterine corpus endometrial carcinoma: UCEC
-#' \item Uterine carcinosarcoma: UCS
-#' }
-#' @return Dataset of matched miRNA and mRNA expression profiles 
-#' @examples 
-#' \dontrun{
-#' BreastCancer=getData("BRCA") 
-#' }
-#' @references 
-#' Zhu, Y., Qiu, P., and Ji, Y. (2014). TCGA-Assembler: open-source software for retrieving and processing TCGA data. Nat. Methods, 11, 599-600.
+#' getData from GDC
+#' @param cancerName The name of cancer in string format
+#' @return dataset in matrix format
+#' @examples
+#' RawGBM=getData("GBM")
 #' @export
-getData<-function(CancerName){
-#rm(list = ls()); # Clear workspace
-#source("Module_A.r"); # Load Module A functions
-#source("Module_B.r"); # Load Module B functions
+getData=function(cancerName){
+  mRNA = TCGAdownload(CancerType=cancerName,Datatype = "mRNA", Platform = "RNA-Seq")
+  miRNA = TCGAdownload(CancerType=cancerName,Datatype = "miRNA", Platform = "miRNA-Seq")
+  unlink("GDCdata",recursive = TRUE)
+  unlink("MANIFEST.txt",recursive = TRUE)
 
-# Get the URLs of public data files of all cancer types and all assay platforms.
-# TraverseAllDirectories(entryPoint = "https://tcga-data.nci.nih.gov/tcgafiles/ftp_auth/distro_ftpusers/anonymous/tumor/", fileLabel = "DirectoryTraverseResult");
-
-# Download and process miRNA-seq data of all CancerName patient samples.
-miRNASeqRawData = DownloadmiRNASeqData(traverseResultFile = "./DirectoryTraverseResult_Jul-08-2014.rda", saveFolderName = "./UserData/RawData.TCGA-Assembler", cancerType = CancerName, assayPlatform = "miRNASeq");
-miRNADataName=substr(colnames(data.frame(miRNASeqRawData[1]))[1],1,nchar(colnames(data.frame(miRNASeqRawData[1]))[1])-2);
-InputmiRNAfilename = paste("./UserData/RawData.TCGA-Assembler/",miRNADataName,"__Jul-08-2014",".txt",sep="");
-OutputmiRNAfilename = paste(CancerName,"_illuminahiseq_mirnaseq",sep="");
-miRNASeqData = ProcessmiRNASeqData(inputFilePath = InputmiRNAfilename, outputFileName = OutputmiRNAfilename, outputFileFolder = "./UserData/ProcessedData.TCGA-Assembler");
-
-# Download and process normalized gene expression data of all CancerName patient samples
-RNASeqRawData = DownloadRNASeqData(traverseResultFile = "./DirectoryTraverseResult_Jul-08-2014.rda", saveFolderName = "./UserData/RawData.TCGA-Assembler", cancerType = CancerName, assayPlatform = "RNASeqV2", dataType = "rsem.genes.normalized_results");
-RNADataName=substr(colnames(data.frame(RNASeqRawData[1]))[1],1,nchar(colnames(data.frame(RNASeqRawData[1]))[1])-2);
-InputRNAfilename = paste("./UserData/RawData.TCGA-Assembler/",RNADataName,"__Jul-08-2014",".txt",sep="");
-OutputRNAfilename = paste(CancerName,"_illuminahiseq_rnaseqv2__GeneExp",sep="");
-GeneExpData = ProcessRNASeqData(inputFilePath = InputRNAfilename, outputFileName = OutputRNAfilename, outputFileFolder = "./UserData/ProcessedData.TCGA-Assembler", dataType = "GeneExp", verType = "RNASeqV2");
-
-# Put multi-modal data in a vector of list objects to be inputted into CombineMultiPlatformData function.
-inputDataList = vector("list", 2);
-inputDataList[[1]] = list(Des = miRNASeqData$Des, Data = miRNASeqData$Data, dataType = "miRNAExp");
-inputDataList[[2]] = list(Des = GeneExpData$Des, Data = GeneExpData$Data, dataType = "GeneExp");
-
-# Merge multi-platform data using Intersect approach.
-MergedData = CombineMultiPlatformData(inputDataList = inputDataList);
-# Merge multi-platform data using Union approach.
-# MergedData = CombineMultiPlatformData(inputDataList = inputDataList, combineStyle = "Union");
-   
-return(MergedData)
-
+  samples_mRNA = colnames(mRNA)
+  samples_miRNA = colnames(miRNA)
+  match = match(substring(samples_miRNA, 1, 20), substring(samples_mRNA, 1, 20))
+  
+  getmatch_data = samples_mRNA[match]
+  match_data_names = cbind(samples_miRNA, getmatch_data)
+  
+  ans = c() #ans is our goal of combination mRNA and miRNA
+  
+  for (i in c(1: length(getmatch_data))) {
+    if (!is.na(match_data_names[i, 2])) {
+      #sample_name = substring(match_data_names[i, 1], 1, 20)
+      tmp = c(as.numeric(miRNA[, i]), as.numeric(mRNA[, match[i]])) #data of sample
+      ans = rbind(ans, tmp)
+    }
+  }
+  
+  empty = which(is.na(match_data_names[, 2]))
+  match_data_names = match_data_names[-empty, ]
+  rownames(ans) = NULL
+  colnames(ans) = c(rownames(miRNA), rownames(mRNA))
+  return(ans)
 }
+
+
+
+
 
 #' Read dataset from csv file
 #' @param dataset The input dataset in csv format
@@ -1656,6 +191,7 @@ return(MergedData)
 #' @export
 Read<-function(dataset){
 		data<-read.csv(dataset, header=TRUE, sep=",")
+		#data<-data[,-1]
 		return(data)
 	}
 
@@ -1730,7 +266,7 @@ queryTargetFile<-function(miRNA,mRNA,file){
 #' @importFrom impute impute.knn
 #' @importFrom limma normalizeBetweenArrays
 #' @param dataset The input dataset in csv format. e.g. "EMT.csv" 
-#' #' @param r The rate threshold to filter the records (genes). Genes with more than r\% missing data will be removed.
+#' @param r The rate threshold to filter the records (genes). Genes with more than r\% missing data will be removed.
 #' @return The processed dataset.
 #' @references 
 #' 1. Hastie T, Tibshirani R, Narasimhan B and Chu G. impute: Imputation for microarray data. R package version 1.42.0.
@@ -1842,7 +378,10 @@ DiffExpAnalysis=function(miR1, miR2, mR1, mR2,topkmiR, topkmR, p.miR, p.mR){
         return(DExp)
         	
 }
-	
+
+
+
+
 #' miRNA target prediction with the Pearson correlation coefficient method
 #' 
 #' Calculate the Pearson correlation coefficient of each pair of miRNA-mRNA,and return a matrix of correlation coefficients with columns are miRNAs and rows are mRNAs.
@@ -3234,6 +1773,150 @@ convert = function (miRNAListFile,sourceV,targetV) {
   write.table(res, file="resOfConvert.csv", sep=",",row.names = FALSE,col.names = TRUE)
 }
 
+# A function for preparing data to classify cancer subtypes
+#' @importFrom utils write.table
+prepareDataForPam50 = function(d, dataDir = "bioclassifier_data", inputFileName = "inputFile.txt") {
+  
+  d <- t(d)
+  noOfRow <- nrow(d)
+  noOfCol <- ncol(d)
+  temp <- matrix(0, nrow = (noOfRow + 1), ncol = noOfCol)
+  row.names(temp) <- c("T", row.names(d))
+  colnames(temp) <- colnames(d)
+  temp[2:(noOfRow + 1), 1:noOfCol] <- d[, ]
+  dir.create(file.path(".", dataDir), showWarnings = FALSE)
+  write.table(temp, paste("./", dataDir, "/", inputFileName, sep = ""), col.names=NA, sep = "\t")
+}
 
+#' Identify miRNA targets by ICP and PAM50
+#' 
+#' This function identifies miRNA targets by ICP and PAM50.
+#' @importFrom utils read.table
+#' @param d A matrix of expression of miRNAs and mRNAs with columns being miRNA or mRNA names and rows being samples
+#' @param nmiR Number of miRNAs
+#' @param nmR Number of mRNAs
+#' @param fiftymRNAsData A matrix of expression of 50 mRNAs in PAM50 with columns being mRNA names and rows being samples
+#' @return The matrix of causal effects of miRNAs and mRNAs with columns being miRNAs and rows being mRNAs
+#' @references 
+#' 1. Parker, J. S., et al. (2009). "Supervised Risk Predictor of Breast Cancer Based on Intrinsic Subtypes." Journal of Clinical Oncology 27(8): 1160-1167.
+#' @export 
+ICPPam50 = function(d, nmiR, nmR, fiftymRNAsData) {
+  
+  # Set parameters
+  ## Folder including input and output files used to categorise samples into cancer subtypes using Pam50
+  dataDir = "bioclassifier_data"
+  ## Input file used to categorise samples into cancer subtypes using Pam50
+  inputFileName = "inputFile.txt"
+  
+  # Classify samples based on cancer subtypes using Pam50
+  # Reference: Parker, J. S., et al. (2009). "Supervised Risk Predictor of Breast Cancer Based on Intrinsic Subtypes." Journal of Clinical Oncology 27(8): 1160-1167.
+  ## Prepare data
+  prepareDataForPam50(fiftymRNAsData, dataDir, inputFileName)
+  ## Run the assignment algorithm
+  source(system.file(package = 'miRLAB', 'bioclassifier_R', 'subtypePrediction_functions.R'))
+  source(system.file(package = 'miRLAB', 'bioclassifier_R', 'subtypePrediction_distributed.R'))
+  
+  ## Read the result
+  result <- read.table(paste("./", dataDir, "/", "outputFile_pam50scores.txt", sep = ""))
+  result <- result[-1, -1]
+  
+  # Define experimental settings
+  ExpInd <- c(rep(0, nrow(d)))
+  ExpInd[which(result[, 6] == "Basal")] <- 1
+  ExpInd[which(result[, 6] == "Her2")] <- 2
+  ExpInd[which(result[, 6] == "LumA")] <- 3
+  ExpInd[which(result[, 6] == "LumB")] <- 4
+  ExpInd[which(result[, 6] == "Normal")] <- 5
+  
+  # Estimate causal effects
+  standardizedData <- scale(d)
+  temp = matrix(nrow = nmR, ncol = nmiR)
+  for (i in 1:nmR) {
+    Y <- standardizedData[, nmiR+i]
+    X <- standardizedData[, c(1:nmiR)]
+    icp <- InvariantCausalPrediction::hiddenICP(X, Y, ExpInd, alpha = 0.1, mode = "asymptotic", intercept=FALSE)
+    for (k in 1:nmiR) {
+      temp[i,k] <- icp$betahat[k]
+    }
+  }
+  colnames(temp) <- colnames(d)[1:nmiR]
+  row.names(temp) <- colnames(d)[(nmiR + 1):(nmiR + nmR)]
+  
+  return(temp)
+}
+
+#' Identify the top miRNA targets by ICP and PAM50
+#' 
+#' This function identifies the top miRNA targets by ICP and PAM50.
+#' @param d A matrix of expression of miRNAs and mRNAs with columns being miRNA or mRNA names and rows being samples
+#' @param nmiR Number of miRNAs
+#' @param nmR Number of mRNAs
+#' @param fiftymRNAsData A matrix of expression of 50 mRNAs in PAM50 with columns being mRNA names and rows being samples
+#' @param top 1 if getting the top of all miRNAs and 2 if getting the top of each miRNA
+#' @param topk Number of the top to get
+#' @return The top k miRNA targets
+#' @references 
+#' 1. Parker, J. S., et al. (2009). "Supervised Risk Predictor of Breast Cancer Based on Intrinsic Subtypes." Journal of Clinical Oncology 27(8): 1160-1167.
+#' @export 
+identifymiRTargetsByICPPam50 = function(d, nmiR, nmR, fiftymRNAsData, top = 1, topk = 500) {
+  
+  temp <- ICPPam50(d, nmiR, nmR, fiftymRNAsData)
+  
+  # Get the result
+  miRTargets = NULL
+  if(top == 1) {# Top for all miRNAs
+    miRTargets = Extopk(temp, topk)
+  } else { # Top for each miRNA
+    for(i in 1:nmiR) {
+      miRiTopk = bRank(temp, i, topk, FALSE)
+      miRTargets <- rbind(miRTargets, miRiTopk)
+    }
+  }
+  
+  return(miRTargets)
+}
+
+#' Identify the top miRNA targets by an ensemble method with ICP-PAM50, Pearson and Lasso
+#' 
+#' This function identifies the top miRNA targets by an ensemble method with ICP-PAM50, Pearson and Lasso.
+#' @param d A matrix of expression of miRNAs and mRNAs with columns being miRNA or mRNA names and rows being samples
+#' @param nmiR Number of miRNAs
+#' @param nmR Number of mRNAs
+#' @param fiftymRNAsData A matrix of expression of 50 mRNAs in PAM50 with columns being mRNA names and rows being samples
+#' @param top 1 if getting the top of all miRNAs and 2 if getting the top of each miRNA
+#' @param topk Number of the top to get
+#' @return The top k miRNA targets
+#' @references 
+#' 1. Parker, J. S., et al. (2009). "Supervised Risk Predictor of Breast Cancer Based on Intrinsic Subtypes." Journal of Clinical Oncology 27(8): 1160-1167.
+#' @export 
+identifymiRTargetsByEnsemble = function(d, nmiR, nmR, fiftymRNAsData, top = 1, topk = 500) {
+  
+  # Get the results of ICPPam50, Pearson and Lasso
+  hid <- ICPPam50(d, nmiR, nmR, fiftymRNAsData)
+  standardizedData <- scale(d)
+  dir.create(file.path(".", "temp_data"), showWarnings = FALSE)
+  write.table(standardizedData, file = "./temp_data/input.csv", sep = ",", row.names = FALSE)
+  pea = Pearson("./temp_data/input.csv", cause = 1:nmiR, effect = (nmiR+1):(nmiR+nmR))
+  las = Lasso("./temp_data/input.csv", cause = 1:nmiR, effect = (nmiR+1):(nmiR+nmR))
+  
+  row.names(pea) <- row.names(hid)
+  row.names(las) <- row.names(hid)
+  
+  # Call the ensemble method
+  borda = Borda(list(hid, pea, las))
+  
+  # Get the result
+  miRTargets = NULL
+  if(top == 1) {# Top for all miRNAs
+    miRTargets = Extopk(borda, topk)
+  } else { # Top for each miRNA
+    for(i in 1:nmiR) {
+      miRiTopk = bRank(borda, i, topk, FALSE)
+      miRTargets <- rbind(miRTargets, miRiTopk)
+    }
+  }
+  
+  return(miRTargets)
+}
 
 				
