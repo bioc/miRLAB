@@ -16,3 +16,4 @@ biocViews: miRNA, GeneExpression, NetworkInference, Network
 RoxygenNote: 6.0.1.9000
 NeedsCompilation: no
 Packaged: 2017-10-04 04:03:54 UTC; mo
+URL: https://github.com/pvvhoang/miRLAB
