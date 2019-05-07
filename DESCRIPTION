@@ -13,7 +13,7 @@ License: GPL (>=2)
 Suggests: knitr,BiocGenerics, AnnotationDbi,RUnit
 VignetteBuilder: knitr
 biocViews: miRNA, GeneExpression, NetworkInference, Network
-RoxygenNote: 6.0.1.9000
+RoxygenNote: 6.1.1
 NeedsCompilation: no
 Packaged: 2017-10-04 04:03:54 UTC; mo
 URL: https://github.com/pvvhoang/miRLAB
