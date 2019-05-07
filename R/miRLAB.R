@@ -145,8 +145,6 @@ TCGAdownload = function(CancerType="BRCA", Datatype="miRNA", Platform="miRNA-Seq
 #' getData from GDC
 #' @param cancerName The name of cancer in string format
 #' @return dataset in matrix format
-#' @examples
-#' RawGBM=getData("GBM")
 #' @export
 getData=function(cancerName){
   mRNA = TCGAdownload(CancerType=cancerName,Datatype = "mRNA", Platform = "RNA-Seq")
