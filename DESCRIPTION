@@ -1,7 +1,7 @@
 Package: miRLAB
 Type: Package
 Title: Dry lab for exploring miRNA-mRNA relationships
-Version: 1.14.1
+Version: 1.15.1
 Date: 2019.07.10
 Author: Thuc Duy Le, Junpeng Zhang, Mo Chen, Vu Viet Hoang Pham
 Maintainer: Thuc Duy Le <Thuc.Le@unisa.edu.au>
@@ -13,7 +13,7 @@ License: GPL (>=2)
 Suggests: knitr,BiocGenerics, AnnotationDbi,RUnit
 VignetteBuilder: knitr
 biocViews: miRNA, GeneExpression, NetworkInference, Network
-RoxygenNote: 6.0.1.9000
+RoxygenNote: 6.1.1
 NeedsCompilation: no
 Packaged: 2017-10-04 04:03:54 UTC; mo
 URL: https://github.com/pvvhoang/miRLAB
