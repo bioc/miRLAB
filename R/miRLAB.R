@@ -989,54 +989,54 @@ res=res*edge
 return(res)
 }
 
-#' miRNA target prediction with the ProMISe method
-#' 
-#' Calculate the ProMISe score of each pair of miRNA-mRNA, and return a matrix of values with columns are miRNAs and rows are mRNAs.
-#' @importFrom Roleswitch roleswitch
-#' @param datacsv the input dataset in csv format
-#' @param cause the column range that specifies the causes (miRNAs), e.g. 1:35
-#' @param effect the column range that specifies the effects (mRNAs), e.g. 36:2000
-#' @param targetbinding the putative target, e.g. "TargetScan.csv". If targetbinding is not specified, only expression data is used.
-#' If targetbinding is specified, the prediction results using expression data with be intersected with the interactions in the target binding file.
-#' @return A  matrix that includes the ProMISe scores. Columns are miRNAs, rows are mRNAs.
-#' @examples 
-#' dataset=system.file("extdata", "ToyEMT.csv", package="miRLAB")
-#' results=ProMISe(dataset, 1:3, 4:18) 
-#' @references
-#' Li, Y., Liang, C., Wong, K.C., Jin, K., and Zhang, Z. (2014). Inferring probabilistic miRNA - mRNA interaction signatures in cancers: a role-switch approach. Nucleic Acids Res., 42, e76-e76.
-#' @export 
-## 13. ProMISe ##
-ProMISe=function(datacsv, cause, effect, targetbinding=NA){
-  # library("Roleswitch")
-  dt<-Read(datacsv)
-  dd<-colMeans(dt)
-  stdData<-as.matrix(dd)
-  header<-readHeader(datacsv)
-  num_miRNA<-length(cause)
-  miR<-header[1:num_miRNA]
-  mR<-header[-(1:num_miRNA)]
-  
-  x.o<-matrix(stdData[effect,],dimnames=list(c(1:length(effect)),"mRNA"))
-  z.o<-matrix(stdData[cause,],dimnames=list(c(1:length(cause)),"miRNA"))
-  c<-matrix(1,length(effect),length(cause)) #Generate ones matrix
-  rownames(c)<-c(1:length(effect))
-  colnames(c)<-c(1:length(cause))
-  
-  rMatrix <- roleswitch(x.o,z.o,c)$p.xz # Calculate ProMISe probabilistic
-  rownames(rMatrix) <- colnames(dt)[effect]
-  colnames(rMatrix) <- colnames(dt)[cause]
-  
-  if(is.na(targetbinding)==FALSE){
-    #query knowledge matrix from file
-    edgeTargetScan<-queryTargetFile(miR,mR,targetbinding); 
-    edgeTargetScan<-edgeTargetScan+t(edgeTargetScan);
-    edgeTargetScan<-edgeTargetScan!=0;
-    edge=edgeTargetScan[effect,cause]
-    rMatrix=rMatrix*edge
-  }
-  
-  return(rMatrix)
-}
+#' #' miRNA target prediction with the ProMISe method
+#' #' 
+#' #' Calculate the ProMISe score of each pair of miRNA-mRNA, and return a matrix of values with columns are miRNAs and rows are mRNAs.
+#' #' @importFrom Roleswitch roleswitch
+#' #' @param datacsv the input dataset in csv format
+#' #' @param cause the column range that specifies the causes (miRNAs), e.g. 1:35
+#' #' @param effect the column range that specifies the effects (mRNAs), e.g. 36:2000
+#' #' @param targetbinding the putative target, e.g. "TargetScan.csv". If targetbinding is not specified, only expression data is used.
+#' #' If targetbinding is specified, the prediction results using expression data with be intersected with the interactions in the target binding file.
+#' #' @return A  matrix that includes the ProMISe scores. Columns are miRNAs, rows are mRNAs.
+#' #' @examples 
+#' #' dataset=system.file("extdata", "ToyEMT.csv", package="miRLAB")
+#' #' results=ProMISe(dataset, 1:3, 4:18) 
+#' #' @references
+#' #' Li, Y., Liang, C., Wong, K.C., Jin, K., and Zhang, Z. (2014). Inferring probabilistic miRNA - mRNA interaction signatures in cancers: a role-switch approach. Nucleic Acids Res., 42, e76-e76.
+#' #' @export 
+#' ## 13. ProMISe ##
+#' ProMISe=function(datacsv, cause, effect, targetbinding=NA){
+#'   # library("Roleswitch")
+#'   dt<-Read(datacsv)
+#'   dd<-colMeans(dt)
+#'   stdData<-as.matrix(dd)
+#'   header<-readHeader(datacsv)
+#'   num_miRNA<-length(cause)
+#'   miR<-header[1:num_miRNA]
+#'   mR<-header[-(1:num_miRNA)]
+#'   
+#'   x.o<-matrix(stdData[effect,],dimnames=list(c(1:length(effect)),"mRNA"))
+#'   z.o<-matrix(stdData[cause,],dimnames=list(c(1:length(cause)),"miRNA"))
+#'   c<-matrix(1,length(effect),length(cause)) #Generate ones matrix
+#'   rownames(c)<-c(1:length(effect))
+#'   colnames(c)<-c(1:length(cause))
+#'   
+#'   rMatrix <- roleswitch(x.o,z.o,c)$p.xz # Calculate ProMISe probabilistic
+#'   rownames(rMatrix) <- colnames(dt)[effect]
+#'   colnames(rMatrix) <- colnames(dt)[cause]
+#'   
+#'   if(is.na(targetbinding)==FALSE){
+#'     #query knowledge matrix from file
+#'     edgeTargetScan<-queryTargetFile(miR,mR,targetbinding); 
+#'     edgeTargetScan<-edgeTargetScan+t(edgeTargetScan);
+#'     edgeTargetScan<-edgeTargetScan!=0;
+#'     edge=edgeTargetScan[effect,cause]
+#'     rMatrix=rMatrix*edge
+#'   }
+#'   
+#'   return(rMatrix)
+#' }
 
 
 #' Extract top k miRNA-mRNA interactions 
