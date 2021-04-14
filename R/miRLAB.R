@@ -27,7 +27,6 @@
 #' @import httr
 #' @import stringr
 #' @import ctc
-#' @import heatmap.plus
 
 
 `%:::%` = function(pkg, fun) get(fun, envir = asNamespace(pkg), inherits = FALSE)
