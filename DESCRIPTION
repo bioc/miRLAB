@@ -1,7 +1,7 @@
 Package: miRLAB
 Type: Package
 Title: Dry lab for exploring miRNA-mRNA relationships
-Version: 1.21.3
+Version: 1.21.4
 Date: 2021.04.14
 Author: Thuc Duy Le, Junpeng Zhang, Mo Chen, Vu Viet Hoang Pham
 Maintainer: Vu Viet Hoang Pham <VuVietHoang.Pham@unisa.edu.au>
