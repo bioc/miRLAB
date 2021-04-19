@@ -4,8 +4,7 @@
 \alias{identifymiRTargetsByEnsemble}
 \title{Identify the top miRNA targets by an ensemble method with ICP-PAM50, Pearson and Lasso}
 \usage{
-identifymiRTargetsByEnsemble(d, nmiR, nmR, fiftymRNAsData, top = 1,
-  topk = 500)
+identifymiRTargetsByEnsemble(d, nmiR, nmR, fiftymRNAsData, top = 1, topk = 500)
 }
 \arguments{
 \item{d}{A matrix of expression of miRNAs and mRNAs with columns being miRNA or mRNA names and rows being samples}
