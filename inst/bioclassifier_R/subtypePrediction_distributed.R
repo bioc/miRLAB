@@ -182,7 +182,7 @@ pamout.centroids<-read.table(trainCentroids,sep="\t",header=T,row.names=1)
 	conf.colors[call.conf<0.95]<-"red"
 	
 	pdf(paste(clustername,".pdf",sep=""))
-	myHeatmap(out$testData,cbind(subtypeColors,conf.colors),file=paste(clustername,".cdt",sep=""),rowNames=rownames(out$testData))
+	#myHeatmap(out$testData,cbind(subtypeColors,conf.colors),file=paste(clustername,".cdt",sep=""),rowNames=rownames(out$testData))
 	dev.off()
 	
 	pdf(pdfname1,height=10,width=12)
