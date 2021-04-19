@@ -4,8 +4,7 @@
 \alias{identifymiRTargetsByICPPam50}
 \title{Identify the top miRNA targets by ICP and PAM50}
 \usage{
-identifymiRTargetsByICPPam50(d, nmiR, nmR, fiftymRNAsData, top = 1,
-  topk = 500)
+identifymiRTargetsByICPPam50(d, nmiR, nmR, fiftymRNAsData, top = 1, topk = 500)
 }
 \arguments{
 \item{d}{A matrix of expression of miRNAs and mRNAs with columns being miRNA or mRNA names and rows being samples}
