@@ -4,8 +4,14 @@
 \alias{IDA}
 \title{miRNA target prediction with the IDA method}
 \usage{
-IDA(datacsv, cause, effect, pcmethod = "original", alpha = 0.05,
-  targetbinding = NA)
+IDA(
+  datacsv,
+  cause,
+  effect,
+  pcmethod = "original",
+  alpha = 0.05,
+  targetbinding = NA
+)
 }
 \arguments{
 \item{datacsv}{the input dataset in csv format}
