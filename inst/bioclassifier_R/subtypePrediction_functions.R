@@ -106,39 +106,39 @@ cols <- function(lowi = "green", highi = "red", ncolors = 20) {
         return(col)
 }
   
-myHeatmap<-function(x,t.colors=NA,fileName="cluster.cdt",linkage="complete",distance="pearson",contrast=2,returnSampleClust=F,rowNames=NA,rightMar=7,bottomMar=1,colNames=NA){
-	
-	#####temp<-hclust2treeview(x,method=distance,file=fileName,link=linkage,keep.hclust=T)
-	temp<-ctc::hclust2treeview(x,method=distance,file=fileName,link=linkage,keep.hclust=T)
-	gTree<-temp[[1]]
-	sTree<-temp[[2]]
-	
-	imageVals<-x
-	imageVals[x > contrast] <- contrast
-	imageVals[x < -1 * contrast] <- -1 * contrast
-	
-	if(sum(is.na(t.colors))>0){
-			heatmap(imageVals,Rowv=as.dendrogram(gTree),Colv=as.dendrogram(sTree),
-							col=cols(),labCol=colNames, scale="none",
-							margins=c(bottomMar,rightMar),labRow=rowNames)
-	}else{
-		if(length(t.colors)>dim(imageVals)[2]){
-			#####heatmap.plus(imageVals,Rowv=as.dendrogram(gTree),Colv=as.dendrogram(sTree),
-			#####					col=cols(),labCol=colNames,labRow=rowNames,scale="none",
-			#####					ColSideColors=t.colors, margins=c(bottomMar,rightMar))
-			heatmap.plus::heatmap.plus(imageVals,Rowv=as.dendrogram(gTree),Colv=as.dendrogram(sTree),
-								col=cols(),labCol=colNames,labRow=rowNames,scale="none",
-								ColSideColors=t.colors, margins=c(bottomMar,rightMar))
-		}else{
-			heatmap(imageVals,Rowv=as.dendrogram(gTree),Colv=as.dendrogram(sTree),
-								col=cols(),labCol=colNames,labRow=rowNames,scale="none",
-								ColSideColors=as.vector(t(t.colors)), margins=c(bottomMar,rightMar))
-		}
-	}
-	if(returnSampleClust){
-		return(sTree)
-	}
-}
+# myHeatmap<-function(x,t.colors=NA,fileName="cluster.cdt",linkage="complete",distance="pearson",contrast=2,returnSampleClust=F,rowNames=NA,rightMar=7,bottomMar=1,colNames=NA){
+# 	
+# 	#####temp<-hclust2treeview(x,method=distance,file=fileName,link=linkage,keep.hclust=T)
+# 	temp<-ctc::hclust2treeview(x,method=distance,file=fileName,link=linkage,keep.hclust=T)
+# 	gTree<-temp[[1]]
+# 	sTree<-temp[[2]]
+# 	
+# 	imageVals<-x
+# 	imageVals[x > contrast] <- contrast
+# 	imageVals[x < -1 * contrast] <- -1 * contrast
+# 	
+# 	if(sum(is.na(t.colors))>0){
+# 			heatmap(imageVals,Rowv=as.dendrogram(gTree),Colv=as.dendrogram(sTree),
+# 							col=cols(),labCol=colNames, scale="none",
+# 							margins=c(bottomMar,rightMar),labRow=rowNames)
+# 	}else{
+# 		if(length(t.colors)>dim(imageVals)[2]){
+# 			#####heatmap.plus(imageVals,Rowv=as.dendrogram(gTree),Colv=as.dendrogram(sTree),
+# 			#####					col=cols(),labCol=colNames,labRow=rowNames,scale="none",
+# 			#####					ColSideColors=t.colors, margins=c(bottomMar,rightMar))
+# 			heatmap.plus::heatmap.plus(imageVals,Rowv=as.dendrogram(gTree),Colv=as.dendrogram(sTree),
+# 								col=cols(),labCol=colNames,labRow=rowNames,scale="none",
+# 								ColSideColors=t.colors, margins=c(bottomMar,rightMar))
+# 		}else{
+# 			heatmap(imageVals,Rowv=as.dendrogram(gTree),Colv=as.dendrogram(sTree),
+# 								col=cols(),labCol=colNames,labRow=rowNames,scale="none",
+# 								ColSideColors=as.vector(t(t.colors)), margins=c(bottomMar,rightMar))
+# 		}
+# 	}
+# 	if(returnSampleClust){
+# 		return(sTree)
+# 	}
+# }
 
 
 standardize<-function(x){
